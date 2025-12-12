@@ -1,0 +1,1717 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Detecting Applications in Traffic Flows Using Machine Learning &#8212; ml-research  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <link rel="stylesheet" type="text/css" href="_static/nbsphinx-code-cells.css?v=2aa19091" />
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="ml-research documentation" href="index.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="Detecting-Applications-in-Traffic-Flows-Using-Machine-Learning">
+<h1>Detecting Applications in Traffic Flows Using Machine Learning<a class="headerlink" href="#Detecting-Applications-in-Traffic-Flows-Using-Machine-Learning" title="Link to this heading">¶</a></h1>
+<p><strong>Authors</strong>: Sam Xie (muyanxiesam), Jillian Chen (jianghui)</p>
+<section id="Project-Overview">
+<h2>Project Overview<a class="headerlink" href="#Project-Overview" title="Link to this heading">¶</a></h2>
+<p>With the increasing use of encryption in network traffic, traditional methods of application identification based on payload inspection have become less effective. This project aims to explore machine learning techniques to identify applications based on <strong>traffic flow characteristics</strong>, such as packet size distributions, timing patterns, and flow duration. Accurate application identification is crucial for network management, security monitoring, and quality of service enforcement.</p>
+<section id="Flow-Definition">
+<h3>Flow Definition<a class="headerlink" href="#Flow-Definition" title="Link to this heading">¶</a></h3>
+<p>A <strong>network flow</strong> is defined as a sequence of packets sharing the same 5-tuple:</p>
+<ul class="simple">
+<li><p>Source IP address</p></li>
+<li><p>Destination IP address</p></li>
+<li><p>Source port</p></li>
+<li><p>Destination port</p></li>
+<li><p>Protocol (TCP/UDP)</p></li>
+</ul>
+<p>This project extracts flows from raw PCAP data and computes statistical features for each flow, enabling flow-level application classification.</p>
+<p>This project will aim to reproduce results from the <a class="reference external" href="https://nprint.github.io/benchmarks/application_identification/netml_vpn-nonvpn.html">netml vpn non-vpn dataset paper</a></p>
+</section>
+</section>
+<section id="Data">
+<h2>Data<a class="headerlink" href="#Data" title="Link to this heading">¶</a></h2>
+<p>The project will utilize a dataset of network traffic captures in PCAPNG format, specifically focusing on encrypted traffic. The dataset will be processed to:</p>
+<ol class="arabic simple">
+<li><p>Extract individual packets with their metadata</p></li>
+<li><p>Group packets into flows using the 5-tuple definition</p></li>
+<li><p>Compute statistical flow features (packet counts, size distributions, timing statistics)</p></li>
+<li><p>Aggregate packet-level labels to flow-level labels</p></li>
+</ol>
+<p>A link to the dataset is here: <a class="reference external" href="https://drive.google.com/file/d/1uEbrL9fl1kd5hDCziSjTEnzbtXUZYIdM/view">Dataset Link</a>.</p>
+<section id="Data-Processing">
+<h3>Data Processing<a class="headerlink" href="#Data-Processing" title="Link to this heading">¶</a></h3>
+<p>checking the required datasets</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># detect if we have all the packages and data we need</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">scapy.all</span><span class="w"> </span><span class="kn">import</span> <span class="n">rdpcap</span><span class="p">,</span> <span class="n">wrpcap</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">fix_pcap_timestamps</span><span class="p">(</span><span class="n">input_file</span><span class="p">,</span> <span class="n">output_file</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Remove first packet and normalize timestamps.&quot;&quot;&quot;</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Loading PCAP file...&quot;</span><span class="p">)</span>
+    <span class="n">packets</span> <span class="o">=</span> <span class="n">rdpcap</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">input_file</span><span class="p">))</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Original packet count: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">packets</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Remove first packet</span>
+    <span class="n">packets_fixed</span> <span class="o">=</span> <span class="n">packets</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+
+    <span class="c1"># Set timestamps to valid absolute values starting from a base time</span>
+    <span class="c1"># Use a recent but fixed epoch time (e.g., Jan 1, 2020)</span>
+    <span class="n">base_time</span> <span class="o">=</span> <span class="mf">1577836800.0</span>  <span class="c1"># 2020-01-01 00:00:00 UTC</span>
+
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">packets_fixed</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Normalizing timestamps to start from 2020-01-01...&quot;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">pkt</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">packets_fixed</span><span class="p">):</span>
+            <span class="c1"># Set timestamp as base_time + packet index (1 second apart)</span>
+            <span class="c1"># This ensures all timestamps are valid and sequential</span>
+            <span class="n">pkt</span><span class="o">.</span><span class="n">time</span> <span class="o">=</span> <span class="n">base_time</span> <span class="o">+</span> <span class="p">(</span><span class="n">i</span> <span class="o">*</span> <span class="mf">0.001</span><span class="p">)</span>  <span class="c1"># 1ms apart</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Fixed packet count: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">packets_fixed</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Writing to </span><span class="si">{</span><span class="n">output_file</span><span class="si">}</span><span class="s2">...&quot;</span><span class="p">)</span>
+    <span class="n">wrpcap</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">output_file</span><span class="p">),</span> <span class="n">packets_fixed</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;✓ Saved successfully!&quot;</span><span class="p">)</span>
+
+<span class="c1"># File paths</span>
+<span class="n">original_pcap</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;data/traffic.pcapng&quot;</span><span class="p">)</span>
+<span class="n">fixed_pcap</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;data/traffic_fixed.pcap&quot;</span><span class="p">)</span>
+<span class="n">extracted_csv</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;data/extracted.csv&quot;</span><span class="p">)</span>
+
+<span class="c1"># Fix PCAP timestamps if needed</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">fixed_pcap</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Fixing timestamps in </span><span class="si">{</span><span class="n">original_pcap</span><span class="si">}</span><span class="s2">...&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">original_pcap</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Required file </span><span class="si">{</span><span class="n">original_pcap</span><span class="si">}</span><span class="s2"> not found.&quot;</span><span class="p">)</span>
+    <span class="n">fix_pcap_timestamps</span><span class="p">(</span><span class="n">original_pcap</span><span class="p">,</span> <span class="n">fixed_pcap</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;✓ Timestamps fixed successfully!&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;✓ Using existing fixed PCAP: </span><span class="si">{</span><span class="n">fixed_pcap</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="c1"># Check if extracted.csv exists</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">extracted_csv</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">⚠ Warning: </span><span class="si">{</span><span class="n">extracted_csv</span><span class="si">}</span><span class="s2"> not found.&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Extracting comments from original PCAP...&quot;</span><span class="p">)</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">system</span><span class="p">(</span><span class="s2">&quot;tshark -r data/traffic.pcapng -T fields -E header=y -e frame.number -e frame.comment | cut -f1,2 | tr &#39;</span><span class="se">\t</span><span class="s2">&#39; &#39;,&#39; &gt; data/extracted.csv&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;✓ Comments extracted.&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;✓ Found </span><span class="si">{</span><span class="n">extracted_csv</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">✓ All required files are ready!&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+WARNING: No IPv4 address found on anpi3 !
+WARNING: No IPv4 address found on anpi0 !
+WARNING: No IPv4 address found on anpi0 !
+WARNING: more No IPv4 address found on anpi1 !
+WARNING: more No IPv4 address found on anpi1 !
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+✓ Using existing fixed PCAP: data/traffic_fixed.pcap
+✓ Found data/extracted.csv
+
+✓ All required files are ready!
+</pre></div></div>
+</div>
+</section>
+<section id="Flow-Extraction-and-Feature-Engineering">
+<h3>Flow Extraction and Feature Engineering<a class="headerlink" href="#Flow-Extraction-and-Feature-Engineering" title="Link to this heading">¶</a></h3>
+<p>We extract flows from the PCAP file using the 5-tuple definition (src_ip, dst_ip, src_port, dst_port, protocol). For each flow, we compute statistical features that capture the behavior of the traffic without requiring payload inspection.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">scapy.all</span><span class="w"> </span><span class="kn">import</span> <span class="n">rdpcap</span><span class="p">,</span> <span class="n">IP</span><span class="p">,</span> <span class="n">TCP</span><span class="p">,</span> <span class="n">UDP</span><span class="p">,</span> <span class="n">IPv6</span>
+
+<span class="c1"># Load packet-level observations (labels)</span>
+<span class="n">observations</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="s1">&#39;data/extracted.csv&#39;</span><span class="p">,</span>
+                 <span class="n">skiprows</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+                 <span class="n">names</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">,</span> <span class="s1">&#39;frame_number&#39;</span><span class="p">,</span> <span class="s1">&#39;frame_comment&#39;</span><span class="p">])</span>
+<span class="n">observations</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">observations</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span> <span class="o">-</span> <span class="mi">2</span>  <span class="c1"># Adjust for removed first packet</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Loaded </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">observations</span><span class="p">)</span><span class="si">}</span><span class="s2"> packet labels&quot;</span><span class="p">)</span>
+
+<span class="c1"># Load packets from PCAP</span>
+<span class="n">fixed_pcap</span> <span class="o">=</span> <span class="s1">&#39;data/traffic_fixed.pcap&#39;</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Loading packets from </span><span class="si">{</span><span class="n">fixed_pcap</span><span class="si">}</span><span class="s2">...&quot;</span><span class="p">)</span>
+<span class="n">packets</span> <span class="o">=</span> <span class="n">rdpcap</span><span class="p">(</span><span class="n">fixed_pcap</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;✓ Loaded </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">packets</span><span class="p">)</span><span class="si">}</span><span class="s2"> packets&quot;</span><span class="p">)</span>
+
+<span class="c1"># Extract packet information with flow keys</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Extracting packet information and flow keys...&quot;</span><span class="p">)</span>
+<span class="n">packet_data</span> <span class="o">=</span> <span class="p">[]</span>
+
+<span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">pkt</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">packets</span><span class="p">):</span>
+    <span class="c1"># Extract flow 5-tuple</span>
+    <span class="n">src_ip</span> <span class="o">=</span> <span class="n">dst_ip</span> <span class="o">=</span> <span class="n">src_port</span> <span class="o">=</span> <span class="n">dst_port</span> <span class="o">=</span> <span class="n">protocol</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">pkt_len</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">pkt</span><span class="p">)</span>
+    <span class="n">timestamp</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">pkt</span><span class="o">.</span><span class="n">time</span><span class="p">)</span>
+
+    <span class="c1"># Handle IPv4</span>
+    <span class="k">if</span> <span class="n">IP</span> <span class="ow">in</span> <span class="n">pkt</span><span class="p">:</span>
+        <span class="n">src_ip</span> <span class="o">=</span> <span class="n">pkt</span><span class="p">[</span><span class="n">IP</span><span class="p">]</span><span class="o">.</span><span class="n">src</span>
+        <span class="n">dst_ip</span> <span class="o">=</span> <span class="n">pkt</span><span class="p">[</span><span class="n">IP</span><span class="p">]</span><span class="o">.</span><span class="n">dst</span>
+        <span class="n">protocol</span> <span class="o">=</span> <span class="n">pkt</span><span class="p">[</span><span class="n">IP</span><span class="p">]</span><span class="o">.</span><span class="n">proto</span>
+    <span class="c1"># Handle IPv6</span>
+    <span class="k">elif</span> <span class="n">IPv6</span> <span class="ow">in</span> <span class="n">pkt</span><span class="p">:</span>
+        <span class="n">src_ip</span> <span class="o">=</span> <span class="n">pkt</span><span class="p">[</span><span class="n">IPv6</span><span class="p">]</span><span class="o">.</span><span class="n">src</span>
+        <span class="n">dst_ip</span> <span class="o">=</span> <span class="n">pkt</span><span class="p">[</span><span class="n">IPv6</span><span class="p">]</span><span class="o">.</span><span class="n">dst</span>
+        <span class="n">protocol</span> <span class="o">=</span> <span class="n">pkt</span><span class="p">[</span><span class="n">IPv6</span><span class="p">]</span><span class="o">.</span><span class="n">nh</span>
+
+    <span class="c1"># Extract ports for TCP/UDP</span>
+    <span class="k">if</span> <span class="n">TCP</span> <span class="ow">in</span> <span class="n">pkt</span><span class="p">:</span>
+        <span class="n">src_port</span> <span class="o">=</span> <span class="n">pkt</span><span class="p">[</span><span class="n">TCP</span><span class="p">]</span><span class="o">.</span><span class="n">sport</span>
+        <span class="n">dst_port</span> <span class="o">=</span> <span class="n">pkt</span><span class="p">[</span><span class="n">TCP</span><span class="p">]</span><span class="o">.</span><span class="n">dport</span>
+        <span class="n">protocol</span> <span class="o">=</span> <span class="mi">6</span>  <span class="c1"># TCP</span>
+    <span class="k">elif</span> <span class="n">UDP</span> <span class="ow">in</span> <span class="n">pkt</span><span class="p">:</span>
+        <span class="n">src_port</span> <span class="o">=</span> <span class="n">pkt</span><span class="p">[</span><span class="n">UDP</span><span class="p">]</span><span class="o">.</span><span class="n">sport</span>
+        <span class="n">dst_port</span> <span class="o">=</span> <span class="n">pkt</span><span class="p">[</span><span class="n">UDP</span><span class="p">]</span><span class="o">.</span><span class="n">dport</span>
+        <span class="n">protocol</span> <span class="o">=</span> <span class="mi">17</span>  <span class="c1"># UDP</span>
+
+    <span class="c1"># Create bidirectional flow key (sorted to make it direction-agnostic)</span>
+    <span class="k">if</span> <span class="n">src_ip</span> <span class="ow">and</span> <span class="n">dst_ip</span><span class="p">:</span>
+        <span class="n">endpoints</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">([(</span><span class="n">src_ip</span><span class="p">,</span> <span class="n">src_port</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="n">dst_ip</span><span class="p">,</span> <span class="n">dst_port</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)])</span>
+        <span class="n">flow_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">endpoints</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">endpoints</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">-</span><span class="si">{</span><span class="n">endpoints</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">endpoints</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">-</span><span class="si">{</span><span class="n">protocol</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">flow_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;unknown_</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">&quot;</span>
+
+    <span class="n">packet_data</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+        <span class="s1">&#39;packet_idx&#39;</span><span class="p">:</span> <span class="n">idx</span><span class="p">,</span>
+        <span class="s1">&#39;flow_key&#39;</span><span class="p">:</span> <span class="n">flow_key</span><span class="p">,</span>
+        <span class="s1">&#39;src_ip&#39;</span><span class="p">:</span> <span class="n">src_ip</span><span class="p">,</span>
+        <span class="s1">&#39;dst_ip&#39;</span><span class="p">:</span> <span class="n">dst_ip</span><span class="p">,</span>
+        <span class="s1">&#39;src_port&#39;</span><span class="p">:</span> <span class="n">src_port</span><span class="p">,</span>
+        <span class="s1">&#39;dst_port&#39;</span><span class="p">:</span> <span class="n">dst_port</span><span class="p">,</span>
+        <span class="s1">&#39;protocol&#39;</span><span class="p">:</span> <span class="n">protocol</span><span class="p">,</span>
+        <span class="s1">&#39;pkt_len&#39;</span><span class="p">:</span> <span class="n">pkt_len</span><span class="p">,</span>
+        <span class="s1">&#39;timestamp&#39;</span><span class="p">:</span> <span class="n">timestamp</span>
+    <span class="p">})</span>
+
+<span class="c1"># Create packet DataFrame</span>
+<span class="n">pdf</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">packet_data</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;✓ Extracted </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">pdf</span><span class="p">)</span><span class="si">}</span><span class="s2"> packet records&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;✓ Found </span><span class="si">{</span><span class="n">pdf</span><span class="p">[</span><span class="s1">&#39;flow_key&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">nunique</span><span class="p">()</span><span class="si">}</span><span class="s2"> unique flows&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Loaded 529018 packet labels
+
+Loading packets from data/traffic_fixed.pcap...
+✓ Loaded 529018 packets
+
+Extracting packet information and flow keys...
+✓ Loaded 529018 packets
+
+Extracting packet information and flow keys...
+✓ Extracted 529018 packet records
+✓ Found 111284 unique flows
+✓ Extracted 529018 packet records
+✓ Found 111284 unique flows
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Merge packet data with labels</span>
+<span class="n">pdf</span> <span class="o">=</span> <span class="n">pdf</span><span class="o">.</span><span class="n">merge</span><span class="p">(</span><span class="n">observations</span><span class="p">[[</span><span class="s1">&#39;id&#39;</span><span class="p">,</span> <span class="s1">&#39;frame_comment&#39;</span><span class="p">]],</span>
+                <span class="n">left_on</span><span class="o">=</span><span class="s1">&#39;packet_idx&#39;</span><span class="p">,</span> <span class="n">right_on</span><span class="o">=</span><span class="s1">&#39;id&#39;</span><span class="p">,</span> <span class="n">how</span><span class="o">=</span><span class="s1">&#39;left&#39;</span><span class="p">)</span>
+<span class="n">pdf</span> <span class="o">=</span> <span class="n">pdf</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">])</span>
+<span class="n">pdf</span> <span class="o">=</span> <span class="n">pdf</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;frame_comment&#39;</span><span class="p">:</span> <span class="s1">&#39;label&#39;</span><span class="p">})</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Packets with labels: </span><span class="si">{</span><span class="n">pdf</span><span class="p">[</span><span class="s1">&#39;label&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">notna</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Sample packet data:&quot;</span><span class="p">)</span>
+<span class="n">pdf</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Packets with labels: 529018
+
+Sample packet data:
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="output_area rendered_html docutils container">
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>packet_idx</th>
+      <th>flow_key</th>
+      <th>src_ip</th>
+      <th>dst_ip</th>
+      <th>src_port</th>
+      <th>dst_port</th>
+      <th>protocol</th>
+      <th>pkt_len</th>
+      <th>timestamp</th>
+      <th>label</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>0</td>
+      <td>131.202.240.87:8118-222.186.31.178:49445-6</td>
+      <td>222.186.31.178</td>
+      <td>131.202.240.87</td>
+      <td>49445</td>
+      <td>8118</td>
+      <td>6</td>
+      <td>60</td>
+      <td>1.577837e+09</td>
+      <td>p2p_torrent_torrent</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>1</td>
+      <td>131.202.240.87:4506-207.241.228.202:80-6</td>
+      <td>131.202.240.87</td>
+      <td>207.241.228.202</td>
+      <td>4506</td>
+      <td>80</td>
+      <td>6</td>
+      <td>66</td>
+      <td>1.577837e+09</td>
+      <td>p2p_torrent_torrent</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>2</td>
+      <td>131.202.240.87:4506-207.241.228.202:80-6</td>
+      <td>207.241.228.202</td>
+      <td>131.202.240.87</td>
+      <td>80</td>
+      <td>4506</td>
+      <td>6</td>
+      <td>66</td>
+      <td>1.577837e+09</td>
+      <td>p2p_torrent_torrent</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>3</td>
+      <td>131.202.240.87:4506-207.241.228.202:80-6</td>
+      <td>131.202.240.87</td>
+      <td>207.241.228.202</td>
+      <td>4506</td>
+      <td>80</td>
+      <td>6</td>
+      <td>54</td>
+      <td>1.577837e+09</td>
+      <td>p2p_torrent_torrent</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>4</td>
+      <td>131.202.240.87:4506-207.241.228.202:80-6</td>
+      <td>131.202.240.87</td>
+      <td>207.241.228.202</td>
+      <td>4506</td>
+      <td>80</td>
+      <td>6</td>
+      <td>240</td>
+      <td>1.577837e+09</td>
+      <td>p2p_torrent_torrent</td>
+    </tr>
+  </tbody>
+</table>
+</div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Check flow distribution</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Flow size distribution:&quot;</span><span class="p">)</span>
+<span class="n">flow_sizes</span> <span class="o">=</span> <span class="n">pdf</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s1">&#39;flow_key&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">size</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Min packets per flow: </span><span class="si">{</span><span class="n">flow_sizes</span><span class="o">.</span><span class="n">min</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Max packets per flow: </span><span class="si">{</span><span class="n">flow_sizes</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Mean packets per flow: </span><span class="si">{</span><span class="n">flow_sizes</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Median packets per flow: </span><span class="si">{</span><span class="n">flow_sizes</span><span class="o">.</span><span class="n">median</span><span class="p">()</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Label distribution in packets:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">pdf</span><span class="p">[</span><span class="s1">&#39;label&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">value_counts</span><span class="p">()</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">10</span><span class="p">))</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Flow size distribution:
+  Min packets per flow: 1
+  Max packets per flow: 875
+  Mean packets per flow: 4.75
+  Median packets per flow: 2.00
+
+Label distribution in packets:
+label
+audio_hangouts_hangouts-audio     126174
+audio_facebook_facebook-audio     122003
+file-transfer_skype_skype-file     85035
+audio_skype_skype-audio            58558
+email_email_email                  18876
+p2p_torrent_torrent                14926
+video_skype_skype-video            13539
+chat_skype_skype-chat              12542
+video_youtube_youtube              11571
+audio_voipbuster_voipbuster        11355
+Name: count, dtype: int64
+label
+audio_hangouts_hangouts-audio     126174
+audio_facebook_facebook-audio     122003
+file-transfer_skype_skype-file     85035
+audio_skype_skype-audio            58558
+email_email_email                  18876
+p2p_torrent_torrent                14926
+video_skype_skype-video            13539
+chat_skype_skype-chat              12542
+video_youtube_youtube              11571
+audio_voipbuster_voipbuster        11355
+Name: count, dtype: int64
+</pre></div></div>
+</div>
+</section>
+<section id="Flow-Feature-Engineering">
+<h3>Flow Feature Engineering<a class="headerlink" href="#Flow-Feature-Engineering" title="Link to this heading">¶</a></h3>
+<p>For each flow, we compute statistical features that capture traffic patterns without inspecting payloads:</p>
+<p><strong>Packet Count Features:</strong></p>
+<ul class="simple">
+<li><p>Total packets in flow</p></li>
+<li><p>Forward/backward packet counts</p></li>
+</ul>
+<p><strong>Packet Size Features:</strong></p>
+<ul class="simple">
+<li><p>Total bytes, mean, std, min, max packet sizes</p></li>
+<li><p>Forward/backward size statistics</p></li>
+</ul>
+<p><strong>Timing Features:</strong></p>
+<ul class="simple">
+<li><p>Flow duration</p></li>
+<li><p>Inter-arrival time statistics (mean, std, min, max)</p></li>
+</ul>
+<p><strong>Protocol Features:</strong></p>
+<ul class="simple">
+<li><p>Protocol type (TCP/UDP)</p></li>
+<li><p>Port numbers</p></li>
+</ul>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">extract_flow_features</span><span class="p">(</span><span class="n">flow_df</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Extract statistical features for a single flow.&quot;&quot;&quot;</span>
+    <span class="n">features</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="c1"># Basic flow info</span>
+    <span class="n">features</span><span class="p">[</span><span class="s1">&#39;flow_key&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">flow_df</span><span class="p">[</span><span class="s1">&#39;flow_key&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="c1"># Packet count features</span>
+    <span class="n">features</span><span class="p">[</span><span class="s1">&#39;total_packets&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">flow_df</span><span class="p">)</span>
+    <span class="n">features</span><span class="p">[</span><span class="s1">&#39;total_bytes&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">flow_df</span><span class="p">[</span><span class="s1">&#39;pkt_len&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+
+    <span class="c1"># Packet size statistics</span>
+    <span class="n">features</span><span class="p">[</span><span class="s1">&#39;pkt_len_mean&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">flow_df</span><span class="p">[</span><span class="s1">&#39;pkt_len&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+    <span class="n">features</span><span class="p">[</span><span class="s1">&#39;pkt_len_std&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">flow_df</span><span class="p">[</span><span class="s1">&#39;pkt_len&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">std</span><span class="p">()</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">flow_df</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="k">else</span> <span class="mi">0</span>
+    <span class="n">features</span><span class="p">[</span><span class="s1">&#39;pkt_len_min&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">flow_df</span><span class="p">[</span><span class="s1">&#39;pkt_len&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">()</span>
+    <span class="n">features</span><span class="p">[</span><span class="s1">&#39;pkt_len_max&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">flow_df</span><span class="p">[</span><span class="s1">&#39;pkt_len&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+    <span class="n">features</span><span class="p">[</span><span class="s1">&#39;pkt_len_median&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">flow_df</span><span class="p">[</span><span class="s1">&#39;pkt_len&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">median</span><span class="p">()</span>
+
+    <span class="c1"># Timing features</span>
+    <span class="n">timestamps</span> <span class="o">=</span> <span class="n">flow_df</span><span class="p">[</span><span class="s1">&#39;timestamp&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">sort_values</span><span class="p">()</span>
+    <span class="n">features</span><span class="p">[</span><span class="s1">&#39;flow_duration&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">timestamps</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">-</span> <span class="n">timestamps</span><span class="o">.</span><span class="n">min</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">timestamps</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">iat</span> <span class="o">=</span> <span class="n">timestamps</span><span class="o">.</span><span class="n">diff</span><span class="p">()</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span>  <span class="c1"># Inter-arrival times</span>
+        <span class="n">features</span><span class="p">[</span><span class="s1">&#39;iat_mean&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">iat</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+        <span class="n">features</span><span class="p">[</span><span class="s1">&#39;iat_std&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">iat</span><span class="o">.</span><span class="n">std</span><span class="p">()</span>
+        <span class="n">features</span><span class="p">[</span><span class="s1">&#39;iat_min&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">iat</span><span class="o">.</span><span class="n">min</span><span class="p">()</span>
+        <span class="n">features</span><span class="p">[</span><span class="s1">&#39;iat_max&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">iat</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">features</span><span class="p">[</span><span class="s1">&#39;iat_mean&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">features</span><span class="p">[</span><span class="s1">&#39;iat_std&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">features</span><span class="p">[</span><span class="s1">&#39;iat_min&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">features</span><span class="p">[</span><span class="s1">&#39;iat_max&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="c1"># Protocol features</span>
+    <span class="n">features</span><span class="p">[</span><span class="s1">&#39;protocol&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">flow_df</span><span class="p">[</span><span class="s1">&#39;protocol&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">flow_df</span><span class="p">[</span><span class="s1">&#39;protocol&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">notna</span><span class="p">()</span><span class="o">.</span><span class="n">any</span><span class="p">()</span> <span class="k">else</span> <span class="mi">0</span>
+
+    <span class="c1"># Port features (use min port as it&#39;s often the server port)</span>
+    <span class="n">src_ports</span> <span class="o">=</span> <span class="n">flow_df</span><span class="p">[</span><span class="s1">&#39;src_port&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span>
+    <span class="n">dst_ports</span> <span class="o">=</span> <span class="n">flow_df</span><span class="p">[</span><span class="s1">&#39;dst_port&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span>
+    <span class="n">all_ports</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">src_ports</span><span class="p">,</span> <span class="n">dst_ports</span><span class="p">])</span>
+    <span class="n">features</span><span class="p">[</span><span class="s1">&#39;min_port&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">all_ports</span><span class="o">.</span><span class="n">min</span><span class="p">()</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">all_ports</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="mi">0</span>
+    <span class="n">features</span><span class="p">[</span><span class="s1">&#39;max_port&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">all_ports</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">all_ports</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="mi">0</span>
+
+    <span class="c1"># Packet size distribution features</span>
+    <span class="n">features</span><span class="p">[</span><span class="s1">&#39;small_packets&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">flow_df</span><span class="p">[</span><span class="s1">&#39;pkt_len&#39;</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">100</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>  <span class="c1"># Small packets (likely ACKs)</span>
+    <span class="n">features</span><span class="p">[</span><span class="s1">&#39;medium_packets&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">((</span><span class="n">flow_df</span><span class="p">[</span><span class="s1">&#39;pkt_len&#39;</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="mi">100</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">flow_df</span><span class="p">[</span><span class="s1">&#39;pkt_len&#39;</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">500</span><span class="p">))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+    <span class="n">features</span><span class="p">[</span><span class="s1">&#39;large_packets&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">flow_df</span><span class="p">[</span><span class="s1">&#39;pkt_len&#39;</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="mi">500</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+
+    <span class="c1"># Bytes per second (flow rate)</span>
+    <span class="k">if</span> <span class="n">features</span><span class="p">[</span><span class="s1">&#39;flow_duration&#39;</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">features</span><span class="p">[</span><span class="s1">&#39;bytes_per_sec&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">features</span><span class="p">[</span><span class="s1">&#39;total_bytes&#39;</span><span class="p">]</span> <span class="o">/</span> <span class="n">features</span><span class="p">[</span><span class="s1">&#39;flow_duration&#39;</span><span class="p">]</span>
+        <span class="n">features</span><span class="p">[</span><span class="s1">&#39;packets_per_sec&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">features</span><span class="p">[</span><span class="s1">&#39;total_packets&#39;</span><span class="p">]</span> <span class="o">/</span> <span class="n">features</span><span class="p">[</span><span class="s1">&#39;flow_duration&#39;</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">features</span><span class="p">[</span><span class="s1">&#39;bytes_per_sec&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">features</span><span class="p">[</span><span class="s1">&#39;total_bytes&#39;</span><span class="p">]</span>
+        <span class="n">features</span><span class="p">[</span><span class="s1">&#39;packets_per_sec&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">features</span><span class="p">[</span><span class="s1">&#39;total_packets&#39;</span><span class="p">]</span>
+
+    <span class="c1"># Get the most common label for this flow (majority voting)</span>
+    <span class="n">labels</span> <span class="o">=</span> <span class="n">flow_df</span><span class="p">[</span><span class="s1">&#39;label&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">labels</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">features</span><span class="p">[</span><span class="s1">&#39;label&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">labels</span><span class="o">.</span><span class="n">mode</span><span class="p">()</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">features</span><span class="p">[</span><span class="s1">&#39;label&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">return</span> <span class="n">features</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Flow feature extraction function defined ✓&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Flow feature extraction function defined ✓
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Extract features for all flows</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Extracting flow features...&quot;</span><span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tqdm</span><span class="w"> </span><span class="kn">import</span> <span class="n">tqdm</span>
+
+<span class="n">flow_features</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="n">grouped</span> <span class="o">=</span> <span class="n">pdf</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s1">&#39;flow_key&#39;</span><span class="p">)</span>
+<span class="n">total_flows</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">grouped</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">flow_key</span><span class="p">,</span> <span class="n">flow_df</span> <span class="ow">in</span> <span class="n">tqdm</span><span class="p">(</span><span class="n">grouped</span><span class="p">,</span> <span class="n">total</span><span class="o">=</span><span class="n">total_flows</span><span class="p">,</span> <span class="n">desc</span><span class="o">=</span><span class="s2">&quot;Processing flows&quot;</span><span class="p">):</span>
+    <span class="n">features</span> <span class="o">=</span> <span class="n">extract_flow_features</span><span class="p">(</span><span class="n">flow_df</span><span class="p">)</span>
+    <span class="n">flow_features</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">features</span><span class="p">)</span>
+
+<span class="c1"># Create flow DataFrame</span>
+<span class="n">flow_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">flow_features</span><span class="p">)</span>
+
+<span class="c1"># Remove flows without labels</span>
+<span class="n">flow_df</span> <span class="o">=</span> <span class="n">flow_df</span><span class="o">.</span><span class="n">dropna</span><span class="p">(</span><span class="n">subset</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;label&#39;</span><span class="p">])</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">✓ Extracted </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">flow_df</span><span class="p">)</span><span class="si">}</span><span class="s2"> labeled flows&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;✓ </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">flow_df</span><span class="o">.</span><span class="n">columns</span><span class="p">)</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">2</span><span class="si">}</span><span class="s2"> features per flow&quot;</span><span class="p">)</span>  <span class="c1"># -2 for flow_key and label</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Flow features:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">flow_df</span><span class="o">.</span><span class="n">columns</span><span class="p">))</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Extracting flow features...
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+Processing flows: 100%|██████████| 111284/111284 [01:04&lt;00:00, 1714.58it/s]
+
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+
+✓ Extracted 111284 labeled flows
+✓ 20 features per flow
+
+Flow features:
+[&#39;flow_key&#39;, &#39;total_packets&#39;, &#39;total_bytes&#39;, &#39;pkt_len_mean&#39;, &#39;pkt_len_std&#39;, &#39;pkt_len_min&#39;, &#39;pkt_len_max&#39;, &#39;pkt_len_median&#39;, &#39;flow_duration&#39;, &#39;iat_mean&#39;, &#39;iat_std&#39;, &#39;iat_min&#39;, &#39;iat_max&#39;, &#39;protocol&#39;, &#39;min_port&#39;, &#39;max_port&#39;, &#39;small_packets&#39;, &#39;medium_packets&#39;, &#39;large_packets&#39;, &#39;bytes_per_sec&#39;, &#39;packets_per_sec&#39;, &#39;label&#39;]
+</pre></div></div>
+</div>
+</section>
+<section id="Train-and-Test-Split">
+<h3>Train and Test Split<a class="headerlink" href="#Train-and-Test-Split" title="Link to this heading">¶</a></h3>
+<p>We split the flow dataset into training and testing sets (80/20 split), ensuring that the split maintains the distribution of application classes through stratification.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.model_selection</span><span class="w"> </span><span class="kn">import</span> <span class="n">train_test_split</span>
+
+<span class="c1"># Preview the flow data</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Flow data summary:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">flow_df</span><span class="o">.</span><span class="n">describe</span><span class="p">())</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Label distribution:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">flow_df</span><span class="p">[</span><span class="s1">&#39;label&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">value_counts</span><span class="p">())</span>
+
+<span class="c1"># Separate features and labels</span>
+<span class="n">feature_cols</span> <span class="o">=</span> <span class="p">[</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">flow_df</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;flow_key&#39;</span><span class="p">,</span> <span class="s1">&#39;label&#39;</span><span class="p">]]</span>
+<span class="n">X</span> <span class="o">=</span> <span class="n">flow_df</span><span class="p">[</span><span class="n">feature_cols</span><span class="p">]</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">flow_df</span><span class="p">[</span><span class="s1">&#39;label&#39;</span><span class="p">]</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">✓ Feature matrix shape: </span><span class="si">{</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;✓ Number of classes: </span><span class="si">{</span><span class="n">y</span><span class="o">.</span><span class="n">nunique</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Flow data summary:
+       total_packets    total_bytes   pkt_len_mean    pkt_len_std  \
+count  111284.000000  111284.000000  111284.000000  111284.000000
+mean        4.753765     793.260972      96.330745      27.205372
+std        14.437535    5706.271733      77.464731      85.395472
+min         1.000000      54.000000      49.000000       0.000000
+25%         2.000000     128.000000      64.000000       0.000000
+50%         2.000000     256.000000      64.000000       0.000000
+75%         4.000000     384.000000     129.500000       0.000000
+max       875.000000  399301.000000    1196.460000     758.060903
+
+         pkt_len_min    pkt_len_max  pkt_len_median  flow_duration  \
+count  111284.000000  111284.000000   111284.000000  111284.000000
+mean       76.211342     129.843715       93.802429      83.561406
+std        27.928165     198.008331       89.163239     140.379092
+min        44.000000      54.000000       44.000000       0.000000
+25%        64.000000      64.000000       64.000000       0.001000
+50%        64.000000      64.000000       64.000000       0.001000
+75%        73.000000     131.000000      110.000000     149.557750
+max       816.000000    1500.000000     1500.000000     512.397000
+
+            iat_mean       iat_std        iat_min        iat_max  \
+count  111284.000000  5.625700e+04  111284.000000  111284.000000
+mean       23.328593  6.441239e+01       5.511464      72.004099
+std        49.332916  7.004665e+01      38.588282     120.810929
+min         0.000000  0.000000e+00       0.000000       0.000000
+25%         0.001000  1.101272e-07       0.001000       0.001000
+50%         0.001000  5.370946e+01       0.001000       0.001000
+75%        33.892500  1.102878e+02       0.001000     137.765000
+max       498.804000  3.581694e+02     498.804000     511.023000
+
+            protocol       min_port       max_port  small_packets  \
+count  111284.000000  111284.000000  111284.000000  111284.000000
+mean       16.588306    5981.056100   54292.204935       3.661119
+std         2.087866    5562.934703   11625.858899       9.788265
+min         6.000000      19.000000      68.000000       0.000000
+25%        17.000000    5355.000000   51991.000000       2.000000
+50%        17.000000    5355.000000   56597.000000       2.000000
+75%        17.000000    5355.000000   61009.000000       4.000000
+max        17.000000   61009.000000   65535.000000     863.000000
+
+       medium_packets  large_packets  bytes_per_sec  packets_per_sec
+count   111284.000000  111284.000000   1.112840e+05    111284.000000
+mean         0.779474       0.313172   1.056969e+05      1069.973603
+std          7.768443       4.004202   1.373792e+05       948.167619
+min          0.000000       0.000000   4.368990e-01         0.004010
+25%          0.000000       0.000000   2.374907e+00         0.035798
+50%          0.000000       0.000000   1.279788e+05      1333.324009
+75%          1.000000       0.000000   1.280093e+05      2000.144969
+max        504.000000     340.000000   1.632118e+06      2000.144969
+
+Label distribution:
+label
+audio_facebook_facebook-audio     38940
+audio_hangouts_hangouts-audio     33038
+file-transfer_skype_skype-file    14127
+audio_skype_skype-audio           10539
+audio_voipbuster_voipbuster        2660
+email_email_email                  2114
+chat_skype_skype-chat              1893
+video_hangouts_hangouts-video      1469
+p2p_torrent_torrent                 958
+video_youtube_youtube               826
+file-transfer_ftps_ftps-down        586
+video_skype_skype-video             512
+chat_facebook_facebook-chat         453
+chat_gmail_gmail-chat               429
+video_vimeo_vimeo                   399
+video_facebook_facebook-video       388
+chat_icq_icq-chat                   340
+chat_aim_aim-chat                   339
+chat_hangouts_hangouts-chat         298
+video_netflix_netflix               247
+audio_spotify_spotify               198
+file-transfer_ftps_ftps-up          134
+tor_youtube_tor-youtube              87
+file-transfer_scp_scp-down           84
+file-transfer_scp_scp-up             82
+file-transfer_sftp_sftp-down         72
+file-transfer_sftp_sftp-up           63
+video_vimeo_tor-vimeo                 6
+tor_facebook_tor-facebook             2
+tor_twitter_tor-twitter               1
+Name: count, dtype: int64
+
+✓ Feature matrix shape: (111284, 20)
+✓ Number of classes: 30
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Filter classes with too few samples for stratification</span>
+<span class="n">min_samples</span> <span class="o">=</span> <span class="mi">2</span>
+<span class="n">class_counts</span> <span class="o">=</span> <span class="n">y</span><span class="o">.</span><span class="n">value_counts</span><span class="p">()</span>
+<span class="n">valid_classes</span> <span class="o">=</span> <span class="n">class_counts</span><span class="p">[</span><span class="n">class_counts</span> <span class="o">&gt;=</span> <span class="n">min_samples</span><span class="p">]</span><span class="o">.</span><span class="n">index</span>
+<span class="n">mask</span> <span class="o">=</span> <span class="n">y</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">valid_classes</span><span class="p">)</span>
+<span class="n">X_filtered</span> <span class="o">=</span> <span class="n">X</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span>
+<span class="n">y_filtered</span> <span class="o">=</span> <span class="n">y</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Classes with &gt;= </span><span class="si">{</span><span class="n">min_samples</span><span class="si">}</span><span class="s2"> samples: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">valid_classes</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Flows after filtering: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">X_filtered</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="c1"># Perform 80/20 split with stratification</span>
+<span class="n">X_train</span><span class="p">,</span> <span class="n">X_test</span><span class="p">,</span> <span class="n">y_train</span><span class="p">,</span> <span class="n">y_test</span> <span class="o">=</span> <span class="n">train_test_split</span><span class="p">(</span>
+    <span class="n">X_filtered</span><span class="p">,</span> <span class="n">y_filtered</span><span class="p">,</span>
+    <span class="n">test_size</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>
+    <span class="n">random_state</span><span class="o">=</span><span class="mi">42</span><span class="p">,</span>
+    <span class="n">stratify</span><span class="o">=</span><span class="n">y_filtered</span>
+<span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Training set size: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">X_train</span><span class="p">)</span><span class="si">}</span><span class="s2"> flows&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Test set size: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">X_test</span><span class="p">)</span><span class="si">}</span><span class="s2"> flows&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Training set class distribution:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">y_train</span><span class="o">.</span><span class="n">value_counts</span><span class="p">()</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">10</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Test set class distribution:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">y_test</span><span class="o">.</span><span class="n">value_counts</span><span class="p">()</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">10</span><span class="p">))</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Classes with &gt;= 2 samples: 29
+Flows after filtering: 111283
+
+Training set size: 89026 flows
+Test set size: 22257 flows
+
+Training set class distribution:
+label
+audio_facebook_facebook-audio     31152
+audio_hangouts_hangouts-audio     26430
+file-transfer_skype_skype-file    11302
+audio_skype_skype-audio            8431
+audio_voipbuster_voipbuster        2128
+email_email_email                  1691
+chat_skype_skype-chat              1514
+video_hangouts_hangouts-video      1175
+p2p_torrent_torrent                 766
+video_youtube_youtube               661
+Name: count, dtype: int64
+
+Test set class distribution:
+label
+audio_facebook_facebook-audio     7788
+audio_hangouts_hangouts-audio     6608
+file-transfer_skype_skype-file    2825
+audio_skype_skype-audio           2108
+audio_voipbuster_voipbuster        532
+email_email_email                  423
+chat_skype_skype-chat              379
+video_hangouts_hangouts-video      294
+p2p_torrent_torrent                192
+video_youtube_youtube              165
+Name: count, dtype: int64
+</pre></div></div>
+</div>
+</section>
+<section id="Model-Training">
+<h3>Model Training<a class="headerlink" href="#Model-Training" title="Link to this heading">¶</a></h3>
+<p>We experiment with several machine learning algorithms using flow-level features:</p>
+<ol class="arabic simple">
+<li><p><strong>Random Forest</strong> - Ensemble method, good for feature importance analysis</p></li>
+<li><p><strong>Support Vector Machines (SVM)</strong> - Effective for high-dimensional data</p></li>
+<li><p><strong>Neural Networks (MLP)</strong> - Can learn complex non-linear patterns</p></li>
+</ol>
+</section>
+<section id="1.-Random-Forest">
+<h3>1. Random Forest<a class="headerlink" href="#1.-Random-Forest" title="Link to this heading">¶</a></h3>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Prepare flow features for training</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Flow features being used:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">X_train</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Feature data types:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">X_train</span><span class="o">.</span><span class="n">dtypes</span><span class="p">)</span>
+
+<span class="c1"># Check for any missing values</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Missing values per feature:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">X_train</span><span class="o">.</span><span class="n">isnull</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
+
+<span class="c1"># Fill any remaining NaN values with 0</span>
+<span class="n">X_train_processed</span> <span class="o">=</span> <span class="n">X_train</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">X_test_processed</span> <span class="o">=</span> <span class="n">X_test</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">✓ Training features ready: </span><span class="si">{</span><span class="n">X_train_processed</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Flow features being used:
+[&#39;total_packets&#39;, &#39;total_bytes&#39;, &#39;pkt_len_mean&#39;, &#39;pkt_len_std&#39;, &#39;pkt_len_min&#39;, &#39;pkt_len_max&#39;, &#39;pkt_len_median&#39;, &#39;flow_duration&#39;, &#39;iat_mean&#39;, &#39;iat_std&#39;, &#39;iat_min&#39;, &#39;iat_max&#39;, &#39;protocol&#39;, &#39;min_port&#39;, &#39;max_port&#39;, &#39;small_packets&#39;, &#39;medium_packets&#39;, &#39;large_packets&#39;, &#39;bytes_per_sec&#39;, &#39;packets_per_sec&#39;]
+
+Feature data types:
+total_packets        int64
+total_bytes          int64
+pkt_len_mean       float64
+pkt_len_std        float64
+pkt_len_min          int64
+pkt_len_max          int64
+pkt_len_median     float64
+flow_duration      float64
+iat_mean           float64
+iat_std            float64
+iat_min            float64
+iat_max            float64
+protocol             int64
+min_port             int64
+max_port             int64
+small_packets        int64
+medium_packets       int64
+large_packets        int64
+bytes_per_sec      float64
+packets_per_sec    float64
+dtype: object
+
+Missing values per feature:
+total_packets          0
+total_bytes            0
+pkt_len_mean           0
+pkt_len_std            0
+pkt_len_min            0
+pkt_len_max            0
+pkt_len_median         0
+flow_duration          0
+iat_mean               0
+iat_std            43941
+iat_min                0
+iat_max                0
+protocol               0
+min_port               0
+max_port               0
+small_packets          0
+medium_packets         0
+large_packets          0
+bytes_per_sec          0
+packets_per_sec        0
+dtype: int64
+
+✓ Training features ready: (89026, 20)
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.ensemble</span><span class="w"> </span><span class="kn">import</span> <span class="n">RandomForestClassifier</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.metrics</span><span class="w"> </span><span class="kn">import</span> <span class="n">accuracy_score</span><span class="p">,</span> <span class="n">classification_report</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+
+<span class="c1"># Initialize Random Forest Classifier</span>
+<span class="n">rf_model</span> <span class="o">=</span> <span class="n">RandomForestClassifier</span><span class="p">(</span>
+    <span class="n">n_estimators</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>      <span class="c1"># Number of trees in the forest</span>
+    <span class="n">max_depth</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span>          <span class="c1"># Maximum depth of trees</span>
+    <span class="n">min_samples_split</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>   <span class="c1"># Minimum samples required to split a node</span>
+    <span class="n">min_samples_leaf</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>    <span class="c1"># Minimum samples required at leaf node</span>
+    <span class="n">random_state</span><span class="o">=</span><span class="mi">42</span><span class="p">,</span>       <span class="c1"># For reproducibility</span>
+    <span class="n">n_jobs</span><span class="o">=-</span><span class="mi">1</span>              <span class="c1"># Use all available processors</span>
+<span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Training Random Forest model on flow features...&quot;</span><span class="p">)</span>
+<span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+<span class="n">rf_model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X_train_processed</span><span class="p">,</span> <span class="n">y_train</span><span class="p">)</span>
+<span class="n">rf_train_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start_time</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;✓ Training complete in </span><span class="si">{</span><span class="n">rf_train_time</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> seconds!&quot;</span><span class="p">)</span>
+
+<span class="c1"># Make predictions</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Making predictions on test set...&quot;</span><span class="p">)</span>
+<span class="n">y_pred_rf</span> <span class="o">=</span> <span class="n">rf_model</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">X_test_processed</span><span class="p">)</span>
+
+<span class="c1"># Evaluate the model</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span> <span class="o">+</span> <span class="s2">&quot;=&quot;</span><span class="o">*</span><span class="mi">60</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;RANDOM FOREST MODEL EVALUATION (Flow-Level)&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span><span class="o">*</span><span class="mi">60</span><span class="p">)</span>
+
+<span class="c1"># Accuracy</span>
+<span class="n">accuracy</span> <span class="o">=</span> <span class="n">accuracy_score</span><span class="p">(</span><span class="n">y_test</span><span class="p">,</span> <span class="n">y_pred_rf</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Accuracy: </span><span class="si">{</span><span class="n">accuracy</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">accuracy</span><span class="o">*</span><span class="mi">100</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">%)&quot;</span><span class="p">)</span>
+
+<span class="c1"># Calculate feature importance</span>
+<span class="n">feature_importance</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span>
+    <span class="s1">&#39;feature&#39;</span><span class="p">:</span> <span class="n">X_train_processed</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span>
+    <span class="s1">&#39;importance&#39;</span><span class="p">:</span> <span class="n">rf_model</span><span class="o">.</span><span class="n">feature_importances_</span>
+<span class="p">})</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s1">&#39;importance&#39;</span><span class="p">,</span> <span class="n">ascending</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Top 10 Most Important Flow Features:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">feature_importance</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">10</span><span class="p">))</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Training Random Forest model on flow features...
+✓ Training complete in 1.41 seconds!
+
+Making predictions on test set...
+
+============================================================
+RANDOM FOREST MODEL EVALUATION (Flow-Level)
+============================================================
+
+Accuracy: 0.5039 (50.39%)
+
+Top 10 Most Important Flow Features:
+            feature  importance
+14         max_port    0.175336
+18    bytes_per_sec    0.103569
+11          iat_max    0.092472
+7     flow_duration    0.070209
+19  packets_per_sec    0.062296
+9           iat_std    0.057306
+3       pkt_len_std    0.054664
+6    pkt_len_median    0.052264
+8          iat_mean    0.052191
+1       total_bytes    0.048961
+✓ Training complete in 1.41 seconds!
+
+Making predictions on test set...
+
+============================================================
+RANDOM FOREST MODEL EVALUATION (Flow-Level)
+============================================================
+
+Accuracy: 0.5039 (50.39%)
+
+Top 10 Most Important Flow Features:
+            feature  importance
+14         max_port    0.175336
+18    bytes_per_sec    0.103569
+11          iat_max    0.092472
+7     flow_duration    0.070209
+19  packets_per_sec    0.062296
+9           iat_std    0.057306
+3       pkt_len_std    0.054664
+6    pkt_len_median    0.052264
+8          iat_mean    0.052191
+1       total_bytes    0.048961
+</pre></div></div>
+</div>
+</section>
+<section id="2.-Support-Vector-Machines-(SVM)">
+<h3>2. Support Vector Machines (SVM)<a class="headerlink" href="#2.-Support-Vector-Machines-(SVM)" title="Link to this heading">¶</a></h3>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.svm</span><span class="w"> </span><span class="kn">import</span> <span class="n">LinearSVC</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.preprocessing</span><span class="w"> </span><span class="kn">import</span> <span class="n">StandardScaler</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+
+<span class="n">warnings</span><span class="o">.</span><span class="n">filterwarnings</span><span class="p">(</span><span class="s1">&#39;ignore&#39;</span><span class="p">)</span>
+
+<span class="c1"># Scale features for SVM (SVMs are sensitive to feature scaling)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Scaling flow features for SVM...&quot;</span><span class="p">)</span>
+<span class="n">scaler</span> <span class="o">=</span> <span class="n">StandardScaler</span><span class="p">()</span>
+<span class="n">X_train_scaled</span> <span class="o">=</span> <span class="n">scaler</span><span class="o">.</span><span class="n">fit_transform</span><span class="p">(</span><span class="n">X_train_processed</span><span class="p">)</span>
+<span class="n">X_test_scaled</span> <span class="o">=</span> <span class="n">scaler</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">X_test_processed</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;✓ Scaling complete!&quot;</span><span class="p">)</span>
+
+<span class="c1"># Initialize Linear SVM</span>
+<span class="n">svm_model</span> <span class="o">=</span> <span class="n">LinearSVC</span><span class="p">(</span>
+    <span class="n">C</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>                    <span class="c1"># Regularization parameter</span>
+    <span class="n">max_iter</span><span class="o">=</span><span class="mi">2000</span><span class="p">,</span>            <span class="c1"># Maximum iterations</span>
+    <span class="n">random_state</span><span class="o">=</span><span class="mi">42</span><span class="p">,</span>
+    <span class="n">dual</span><span class="o">=</span><span class="kc">True</span>
+<span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Training Linear SVM model on flow features...&quot;</span><span class="p">)</span>
+<span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+<span class="n">svm_model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X_train_scaled</span><span class="p">,</span> <span class="n">y_train</span><span class="p">)</span>
+<span class="n">svm_train_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start_time</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;✓ Training complete in </span><span class="si">{</span><span class="n">svm_train_time</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> seconds!&quot;</span><span class="p">)</span>
+
+<span class="c1"># Make predictions</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Making predictions on test set...&quot;</span><span class="p">)</span>
+<span class="n">y_pred_svm</span> <span class="o">=</span> <span class="n">svm_model</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">X_test_scaled</span><span class="p">)</span>
+
+<span class="c1"># Evaluate</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span> <span class="o">+</span> <span class="s2">&quot;=&quot;</span><span class="o">*</span><span class="mi">60</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;SUPPORT VECTOR MACHINE (SVM) MODEL EVALUATION (Flow-Level)&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span><span class="o">*</span><span class="mi">60</span><span class="p">)</span>
+
+<span class="n">accuracy_svm</span> <span class="o">=</span> <span class="n">accuracy_score</span><span class="p">(</span><span class="n">y_test</span><span class="p">,</span> <span class="n">y_pred_svm</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Accuracy: </span><span class="si">{</span><span class="n">accuracy_svm</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">accuracy_svm</span><span class="o">*</span><span class="mi">100</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">%)&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Scaling flow features for SVM...
+✓ Scaling complete!
+
+Training Linear SVM model on flow features...
+✓ Training complete in 314.05 seconds!
+
+Making predictions on test set...
+
+============================================================
+SUPPORT VECTOR MACHINE (SVM) MODEL EVALUATION (Flow-Level)
+============================================================
+
+Accuracy: 0.4198 (41.98%)
+✓ Training complete in 314.05 seconds!
+
+Making predictions on test set...
+
+============================================================
+SUPPORT VECTOR MACHINE (SVM) MODEL EVALUATION (Flow-Level)
+============================================================
+
+Accuracy: 0.4198 (41.98%)
+</pre></div></div>
+</div>
+</section>
+<section id="3.-Neural-Networks">
+<h3>3. Neural Networks<a class="headerlink" href="#3.-Neural-Networks" title="Link to this heading">¶</a></h3>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.neural_network</span><span class="w"> </span><span class="kn">import</span> <span class="n">MLPClassifier</span>
+
+<span class="c1"># Initialize Multi-Layer Perceptron (Neural Network)</span>
+<span class="n">nn_model</span> <span class="o">=</span> <span class="n">MLPClassifier</span><span class="p">(</span>
+    <span class="n">hidden_layer_sizes</span><span class="o">=</span><span class="p">(</span><span class="mi">128</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="mi">32</span><span class="p">),</span>  <span class="c1"># Three hidden layers</span>
+    <span class="n">activation</span><span class="o">=</span><span class="s1">&#39;relu&#39;</span><span class="p">,</span>
+    <span class="n">solver</span><span class="o">=</span><span class="s1">&#39;adam&#39;</span><span class="p">,</span>
+    <span class="n">alpha</span><span class="o">=</span><span class="mf">0.0001</span><span class="p">,</span>                       <span class="c1"># L2 regularization</span>
+    <span class="n">batch_size</span><span class="o">=</span><span class="mi">256</span><span class="p">,</span>
+    <span class="n">learning_rate</span><span class="o">=</span><span class="s1">&#39;adaptive&#39;</span><span class="p">,</span>
+    <span class="n">learning_rate_init</span><span class="o">=</span><span class="mf">0.001</span><span class="p">,</span>
+    <span class="n">max_iter</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span>
+    <span class="n">random_state</span><span class="o">=</span><span class="mi">42</span><span class="p">,</span>
+    <span class="n">verbose</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">early_stopping</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">validation_fraction</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
+    <span class="n">n_iter_no_change</span><span class="o">=</span><span class="mi">15</span>
+<span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Training Neural Network model on flow features...&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Architecture: Input -&gt; 128 -&gt; 64 -&gt; 32 -&gt; Output</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+<span class="n">nn_model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X_train_scaled</span><span class="p">,</span> <span class="n">y_train</span><span class="p">)</span>
+<span class="n">nn_train_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start_time</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">✓ Training complete in </span><span class="si">{</span><span class="n">nn_train_time</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> seconds!&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Training stopped at iteration: </span><span class="si">{</span><span class="n">nn_model</span><span class="o">.</span><span class="n">n_iter_</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="c1"># Make predictions</span>
+<span class="n">y_pred_nn</span> <span class="o">=</span> <span class="n">nn_model</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">X_test_scaled</span><span class="p">)</span>
+
+<span class="c1"># Evaluate</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span> <span class="o">+</span> <span class="s2">&quot;=&quot;</span><span class="o">*</span><span class="mi">60</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;NEURAL NETWORK MODEL EVALUATION (Flow-Level)&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span><span class="o">*</span><span class="mi">60</span><span class="p">)</span>
+
+<span class="n">accuracy_nn</span> <span class="o">=</span> <span class="n">accuracy_score</span><span class="p">(</span><span class="n">y_test</span><span class="p">,</span> <span class="n">y_pred_nn</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Accuracy: </span><span class="si">{</span><span class="n">accuracy_nn</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">accuracy_nn</span><span class="o">*</span><span class="mi">100</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">%)&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Training Neural Network model on flow features...
+Architecture: Input -&gt; 128 -&gt; 64 -&gt; 32 -&gt; Output
+
+Iteration 1, loss = 1.72302430
+Validation score: 0.437830
+Iteration 2, loss = 1.49745900
+Validation score: 0.438504
+Iteration 1, loss = 1.72302430
+Validation score: 0.437830
+Iteration 2, loss = 1.49745900
+Validation score: 0.438504
+Iteration 3, loss = 1.46355719
+Validation score: 0.435584
+Iteration 4, loss = 1.44245657
+Validation score: 0.447153
+Iteration 3, loss = 1.46355719
+Validation score: 0.435584
+Iteration 4, loss = 1.44245657
+Validation score: 0.447153
+Iteration 5, loss = 1.42703073
+Validation score: 0.445468
+Iteration 6, loss = 1.41189643
+Validation score: 0.441649
+Iteration 5, loss = 1.42703073
+Validation score: 0.445468
+Iteration 6, loss = 1.41189643
+Validation score: 0.441649
+Iteration 7, loss = 1.40081894
+Validation score: 0.450073
+Iteration 8, loss = 1.39218526
+Validation score: 0.458160
+Iteration 7, loss = 1.40081894
+Validation score: 0.450073
+Iteration 8, loss = 1.39218526
+Validation score: 0.458160
+Iteration 9, loss = 1.38299724
+Validation score: 0.458722
+Iteration 10, loss = 1.37539509
+Validation score: 0.441874
+Iteration 9, loss = 1.38299724
+Validation score: 0.458722
+Iteration 10, loss = 1.37539509
+Validation score: 0.441874
+Iteration 11, loss = 1.36837243
+Validation score: 0.450635
+Iteration 12, loss = 1.36266357
+Validation score: 0.461417
+Iteration 11, loss = 1.36837243
+Validation score: 0.450635
+Iteration 12, loss = 1.36266357
+Validation score: 0.461417
+Iteration 13, loss = 1.35764530
+Validation score: 0.451309
+Iteration 14, loss = 1.35227551
+Validation score: 0.451870
+Iteration 13, loss = 1.35764530
+Validation score: 0.451309
+Iteration 14, loss = 1.35227551
+Validation score: 0.451870
+Iteration 15, loss = 1.34790847
+Validation score: 0.463552
+Iteration 16, loss = 1.34188027
+Validation score: 0.456700
+Iteration 15, loss = 1.34790847
+Validation score: 0.463552
+Iteration 16, loss = 1.34188027
+Validation score: 0.456700
+Iteration 17, loss = 1.33965273
+Validation score: 0.470179
+Iteration 18, loss = 1.33717135
+Validation score: 0.462990
+Iteration 17, loss = 1.33965273
+Validation score: 0.470179
+Iteration 18, loss = 1.33717135
+Validation score: 0.462990
+Iteration 19, loss = 1.33366985
+Validation score: 0.473885
+Iteration 20, loss = 1.33063796
+Validation score: 0.458946
+Iteration 19, loss = 1.33366985
+Validation score: 0.473885
+Iteration 20, loss = 1.33063796
+Validation score: 0.458946
+Iteration 21, loss = 1.32808252
+Validation score: 0.475458
+Iteration 22, loss = 1.32449754
+Validation score: 0.473324
+Iteration 21, loss = 1.32808252
+Validation score: 0.475458
+Iteration 22, loss = 1.32449754
+Validation score: 0.473324
+Iteration 23, loss = 1.32405017
+Validation score: 0.458834
+Iteration 24, loss = 1.32175343
+Validation score: 0.467371
+Iteration 23, loss = 1.32405017
+Validation score: 0.458834
+Iteration 24, loss = 1.32175343
+Validation score: 0.467371
+Iteration 25, loss = 1.31924153
+Validation score: 0.467034
+Iteration 26, loss = 1.31772664
+Validation score: 0.470628
+Iteration 25, loss = 1.31924153
+Validation score: 0.467034
+Iteration 26, loss = 1.31772664
+Validation score: 0.470628
+Iteration 27, loss = 1.31647045
+Validation score: 0.471976
+Iteration 28, loss = 1.31436852
+Validation score: 0.467146
+Iteration 27, loss = 1.31647045
+Validation score: 0.471976
+Iteration 28, loss = 1.31436852
+Validation score: 0.467146
+Iteration 29, loss = 1.31278806
+Validation score: 0.467146
+Iteration 30, loss = 1.31322217
+Validation score: 0.463215
+Iteration 29, loss = 1.31278806
+Validation score: 0.467146
+Iteration 30, loss = 1.31322217
+Validation score: 0.463215
+Iteration 31, loss = 1.30975313
+Validation score: 0.465686
+Iteration 32, loss = 1.30883224
+Validation score: 0.469954
+Iteration 31, loss = 1.30975313
+Validation score: 0.465686
+Iteration 32, loss = 1.30883224
+Validation score: 0.469954
+Iteration 33, loss = 1.30800027
+Validation score: 0.474334
+Iteration 34, loss = 1.30708656
+Validation score: 0.470179
+Iteration 33, loss = 1.30800027
+Validation score: 0.474334
+Iteration 34, loss = 1.30708656
+Validation score: 0.470179
+Iteration 35, loss = 1.30669133
+Validation score: 0.474222
+Iteration 36, loss = 1.30386370
+Validation score: 0.473436
+Iteration 35, loss = 1.30669133
+Validation score: 0.474222
+Iteration 36, loss = 1.30386370
+Validation score: 0.473436
+Iteration 37, loss = 1.30225164
+Validation score: 0.459957
+Validation score did not improve more than tol=0.000100 for 15 consecutive epochs. Stopping.
+
+✓ Training complete in 5.70 seconds!
+Training stopped at iteration: 37
+
+============================================================
+NEURAL NETWORK MODEL EVALUATION (Flow-Level)
+============================================================
+
+Accuracy: 0.4646 (46.46%)
+Iteration 37, loss = 1.30225164
+Validation score: 0.459957
+Validation score did not improve more than tol=0.000100 for 15 consecutive epochs. Stopping.
+
+✓ Training complete in 5.70 seconds!
+Training stopped at iteration: 37
+
+============================================================
+NEURAL NETWORK MODEL EVALUATION (Flow-Level)
+============================================================
+
+Accuracy: 0.4646 (46.46%)
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Compare all models</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span> <span class="o">+</span> <span class="s2">&quot;=&quot;</span><span class="o">*</span><span class="mi">60</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;FINAL MODEL COMPARISON (Flow-Level Classification)&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span><span class="o">*</span><span class="mi">60</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Dataset Statistics:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Total flows: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">flow_df</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Training flows: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">X_train</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Test flows: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">X_test</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Features per flow: </span><span class="si">{</span><span class="n">X_train_processed</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Number of classes: </span><span class="si">{</span><span class="n">y</span><span class="o">.</span><span class="n">nunique</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Model Performance:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Random Forest Accuracy:  </span><span class="si">{</span><span class="n">accuracy</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">accuracy</span><span class="o">*</span><span class="mi">100</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">%) - trained in </span><span class="si">{</span><span class="n">rf_train_time</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">s&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  SVM Accuracy:            </span><span class="si">{</span><span class="n">accuracy_svm</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">accuracy_svm</span><span class="o">*</span><span class="mi">100</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">%) - trained in </span><span class="si">{</span><span class="n">svm_train_time</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">s&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Neural Network Accuracy: </span><span class="si">{</span><span class="n">accuracy_nn</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">accuracy_nn</span><span class="o">*</span><span class="mi">100</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">%) - trained in </span><span class="si">{</span><span class="n">nn_train_time</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">s&quot;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Best Model: &quot;</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+<span class="n">best_accuracy</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">accuracy</span><span class="p">,</span> <span class="n">accuracy_svm</span><span class="p">,</span> <span class="n">accuracy_nn</span><span class="p">)</span>
+<span class="k">if</span> <span class="n">best_accuracy</span> <span class="o">==</span> <span class="n">accuracy</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Random Forest (</span><span class="si">{</span><span class="n">accuracy</span><span class="o">*</span><span class="mi">100</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">%)&quot;</span><span class="p">)</span>
+<span class="k">elif</span> <span class="n">best_accuracy</span> <span class="o">==</span> <span class="n">accuracy_svm</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SVM (</span><span class="si">{</span><span class="n">accuracy_svm</span><span class="o">*</span><span class="mi">100</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">%)&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Neural Network (</span><span class="si">{</span><span class="n">accuracy_nn</span><span class="o">*</span><span class="mi">100</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">%)&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+
+============================================================
+FINAL MODEL COMPARISON (Flow-Level Classification)
+============================================================
+
+Dataset Statistics:
+  Total flows: 111284
+  Training flows: 89026
+  Test flows: 22257
+  Features per flow: 20
+  Number of classes: 30
+
+Model Performance:
+  Random Forest Accuracy:  0.5039 (50.39%) - trained in 1.41s
+  SVM Accuracy:            0.4198 (41.98%) - trained in 314.05s
+  Neural Network Accuracy: 0.4646 (46.46%) - trained in 5.70s
+
+Best Model: Random Forest (50.39%)
+</pre></div></div>
+</div>
+</section>
+</section>
+<section id="Results">
+<h2>Results<a class="headerlink" href="#Results" title="Link to this heading">¶</a></h2>
+<section id="Visualization">
+<h3>Visualization<a class="headerlink" href="#Visualization" title="Link to this heading">¶</a></h3>
+<p>Comprehensive visualization of flow-based classification results including model performance, feature importance, and flow statistics.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">seaborn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">sns</span>
+
+<span class="c1"># Set style</span>
+<span class="n">sns</span><span class="o">.</span><span class="n">set_style</span><span class="p">(</span><span class="s2">&quot;whitegrid&quot;</span><span class="p">)</span>
+<span class="n">sns</span><span class="o">.</span><span class="n">set_palette</span><span class="p">(</span><span class="s2">&quot;husl&quot;</span><span class="p">)</span>
+
+<span class="n">fig</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">18</span><span class="p">,</span> <span class="mi">14</span><span class="p">))</span>
+<span class="n">gs</span> <span class="o">=</span> <span class="n">fig</span><span class="o">.</span><span class="n">add_gridspec</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="n">hspace</span><span class="o">=</span><span class="mf">0.4</span><span class="p">,</span> <span class="n">wspace</span><span class="o">=</span><span class="mf">0.35</span><span class="p">)</span>
+
+<span class="c1"># 1. Model Accuracy Comparison</span>
+<span class="n">ax1</span> <span class="o">=</span> <span class="n">fig</span><span class="o">.</span><span class="n">add_subplot</span><span class="p">(</span><span class="n">gs</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="p">:</span><span class="mi">2</span><span class="p">])</span>
+<span class="n">models</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;Random Forest&#39;</span><span class="p">,</span> <span class="s1">&#39;SVM&#39;</span><span class="p">,</span> <span class="s1">&#39;Neural Network&#39;</span><span class="p">]</span>
+<span class="n">accuracies</span> <span class="o">=</span> <span class="p">[</span><span class="n">accuracy</span> <span class="o">*</span> <span class="mi">100</span><span class="p">,</span> <span class="n">accuracy_svm</span> <span class="o">*</span> <span class="mi">100</span><span class="p">,</span> <span class="n">accuracy_nn</span> <span class="o">*</span> <span class="mi">100</span><span class="p">]</span>
+<span class="n">colors</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;#2ecc71&#39;</span><span class="p">,</span> <span class="s1">&#39;#e74c3c&#39;</span><span class="p">,</span> <span class="s1">&#39;#3498db&#39;</span><span class="p">]</span>
+
+<span class="n">bars</span> <span class="o">=</span> <span class="n">ax1</span><span class="o">.</span><span class="n">bar</span><span class="p">(</span><span class="n">models</span><span class="p">,</span> <span class="n">accuracies</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">colors</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span> <span class="n">edgecolor</span><span class="o">=</span><span class="s1">&#39;black&#39;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="n">ax1</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;Accuracy (%)&#39;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">13</span><span class="p">,</span> <span class="n">fontweight</span><span class="o">=</span><span class="s1">&#39;bold&#39;</span><span class="p">)</span>
+<span class="n">ax1</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Flow-Level Model Performance Comparison&#39;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">15</span><span class="p">,</span> <span class="n">fontweight</span><span class="o">=</span><span class="s1">&#39;bold&#39;</span><span class="p">,</span> <span class="n">pad</span><span class="o">=</span><span class="mi">15</span><span class="p">)</span>
+<span class="n">ax1</span><span class="o">.</span><span class="n">set_ylim</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">])</span>
+<span class="n">ax1</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s1">&#39;y&#39;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">linestyle</span><span class="o">=</span><span class="s1">&#39;--&#39;</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">bar</span><span class="p">,</span> <span class="n">acc</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">bars</span><span class="p">,</span> <span class="n">accuracies</span><span class="p">):</span>
+    <span class="n">ax1</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="n">bar</span><span class="o">.</span><span class="n">get_x</span><span class="p">()</span> <span class="o">+</span> <span class="n">bar</span><span class="o">.</span><span class="n">get_width</span><span class="p">()</span><span class="o">/</span><span class="mf">2.</span><span class="p">,</span> <span class="n">bar</span><span class="o">.</span><span class="n">get_height</span><span class="p">()</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">acc</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1">%&#39;</span><span class="p">,</span> <span class="n">ha</span><span class="o">=</span><span class="s1">&#39;center&#39;</span><span class="p">,</span> <span class="n">va</span><span class="o">=</span><span class="s1">&#39;bottom&#39;</span><span class="p">,</span> <span class="n">fontweight</span><span class="o">=</span><span class="s1">&#39;bold&#39;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">12</span><span class="p">)</span>
+
+<span class="c1"># 2. Training Time Comparison</span>
+<span class="n">ax2</span> <span class="o">=</span> <span class="n">fig</span><span class="o">.</span><span class="n">add_subplot</span><span class="p">(</span><span class="n">gs</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">])</span>
+<span class="n">training_times</span> <span class="o">=</span> <span class="p">[</span><span class="n">rf_train_time</span><span class="p">,</span> <span class="n">svm_train_time</span><span class="p">,</span> <span class="n">nn_train_time</span><span class="p">]</span>
+<span class="n">ax2</span><span class="o">.</span><span class="n">barh</span><span class="p">(</span><span class="n">models</span><span class="p">,</span> <span class="n">training_times</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">colors</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span> <span class="n">edgecolor</span><span class="o">=</span><span class="s1">&#39;black&#39;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="n">ax2</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;Time (seconds)&#39;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">11</span><span class="p">,</span> <span class="n">fontweight</span><span class="o">=</span><span class="s1">&#39;bold&#39;</span><span class="p">)</span>
+<span class="n">ax2</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Training Time&#39;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">13</span><span class="p">,</span> <span class="n">fontweight</span><span class="o">=</span><span class="s1">&#39;bold&#39;</span><span class="p">,</span> <span class="n">pad</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+<span class="n">ax2</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">linestyle</span><span class="o">=</span><span class="s1">&#39;--&#39;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">training_times</span><span class="p">):</span>
+    <span class="n">ax2</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="n">t</span> <span class="o">+</span> <span class="mf">0.5</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">t</span><span class="si">:</span><span class="s1">.1f</span><span class="si">}</span><span class="s1">s&#39;</span><span class="p">,</span> <span class="n">va</span><span class="o">=</span><span class="s1">&#39;center&#39;</span><span class="p">,</span> <span class="n">fontweight</span><span class="o">=</span><span class="s1">&#39;bold&#39;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+
+<span class="c1"># 3. Flow Feature Importance (Random Forest)</span>
+<span class="n">ax3</span> <span class="o">=</span> <span class="n">fig</span><span class="o">.</span><span class="n">add_subplot</span><span class="p">(</span><span class="n">gs</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="p">:</span><span class="mi">2</span><span class="p">])</span>
+<span class="n">top_features</span> <span class="o">=</span> <span class="n">feature_importance</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+<span class="n">bars</span> <span class="o">=</span> <span class="n">ax3</span><span class="o">.</span><span class="n">barh</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">top_features</span><span class="p">)),</span> <span class="n">top_features</span><span class="p">[</span><span class="s1">&#39;importance&#39;</span><span class="p">],</span>
+                <span class="n">color</span><span class="o">=</span><span class="s1">&#39;#2ecc71&#39;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.7</span><span class="p">,</span> <span class="n">edgecolor</span><span class="o">=</span><span class="s1">&#39;black&#39;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mf">1.5</span><span class="p">)</span>
+<span class="n">ax3</span><span class="o">.</span><span class="n">set_yticks</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">top_features</span><span class="p">)))</span>
+<span class="n">ax3</span><span class="o">.</span><span class="n">set_yticklabels</span><span class="p">(</span><span class="n">top_features</span><span class="p">[</span><span class="s1">&#39;feature&#39;</span><span class="p">],</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+<span class="n">ax3</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;Importance Score&#39;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">11</span><span class="p">,</span> <span class="n">fontweight</span><span class="o">=</span><span class="s1">&#39;bold&#39;</span><span class="p">)</span>
+<span class="n">ax3</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Top 10 Flow Features (Random Forest Importance)&#39;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">13</span><span class="p">,</span> <span class="n">fontweight</span><span class="o">=</span><span class="s1">&#39;bold&#39;</span><span class="p">,</span> <span class="n">pad</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+<span class="n">ax3</span><span class="o">.</span><span class="n">invert_yaxis</span><span class="p">()</span>
+<span class="n">ax3</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">linestyle</span><span class="o">=</span><span class="s1">&#39;--&#39;</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">bar</span><span class="p">,</span> <span class="n">imp</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">bars</span><span class="p">,</span> <span class="n">top_features</span><span class="p">[</span><span class="s1">&#39;importance&#39;</span><span class="p">]):</span>
+    <span class="n">ax3</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="n">bar</span><span class="o">.</span><span class="n">get_width</span><span class="p">()</span> <span class="o">+</span> <span class="mf">0.005</span><span class="p">,</span> <span class="n">bar</span><span class="o">.</span><span class="n">get_y</span><span class="p">()</span> <span class="o">+</span> <span class="n">bar</span><span class="o">.</span><span class="n">get_height</span><span class="p">()</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">imp</span><span class="si">:</span><span class="s1">.4f</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">va</span><span class="o">=</span><span class="s1">&#39;center&#39;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">9</span><span class="p">)</span>
+
+<span class="c1"># 4. Flow Size Distribution</span>
+<span class="n">ax4</span> <span class="o">=</span> <span class="n">fig</span><span class="o">.</span><span class="n">add_subplot</span><span class="p">(</span><span class="n">gs</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">])</span>
+<span class="n">flow_sizes</span> <span class="o">=</span> <span class="n">pdf</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s1">&#39;flow_key&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">size</span><span class="p">()</span>
+<span class="n">ax4</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">flow_sizes</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">upper</span><span class="o">=</span><span class="mi">100</span><span class="p">),</span> <span class="n">bins</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;#9b59b6&#39;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.7</span><span class="p">,</span> <span class="n">edgecolor</span><span class="o">=</span><span class="s1">&#39;black&#39;</span><span class="p">)</span>
+<span class="n">ax4</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;Packets per Flow&#39;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">11</span><span class="p">,</span> <span class="n">fontweight</span><span class="o">=</span><span class="s1">&#39;bold&#39;</span><span class="p">)</span>
+<span class="n">ax4</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;Number of Flows&#39;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">11</span><span class="p">,</span> <span class="n">fontweight</span><span class="o">=</span><span class="s1">&#39;bold&#39;</span><span class="p">)</span>
+<span class="n">ax4</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Flow Size Distribution</span><span class="se">\n</span><span class="s1">(clipped at 100)&#39;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">11</span><span class="p">,</span> <span class="n">fontweight</span><span class="o">=</span><span class="s1">&#39;bold&#39;</span><span class="p">,</span> <span class="n">pad</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+<span class="n">ax4</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s1">&#39;y&#39;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">linestyle</span><span class="o">=</span><span class="s1">&#39;--&#39;</span><span class="p">)</span>
+
+<span class="c1"># 5. Class Distribution</span>
+<span class="n">ax5</span> <span class="o">=</span> <span class="n">fig</span><span class="o">.</span><span class="n">add_subplot</span><span class="p">(</span><span class="n">gs</span><span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>
+<span class="n">class_counts</span> <span class="o">=</span> <span class="n">y_test</span><span class="o">.</span><span class="n">value_counts</span><span class="p">()</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">8</span><span class="p">)</span>
+<span class="n">ax5</span><span class="o">.</span><span class="n">barh</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">class_counts</span><span class="p">)),</span> <span class="n">class_counts</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;#3498db&#39;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.7</span><span class="p">,</span> <span class="n">edgecolor</span><span class="o">=</span><span class="s1">&#39;black&#39;</span><span class="p">)</span>
+<span class="n">ax5</span><span class="o">.</span><span class="n">set_yticks</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">class_counts</span><span class="p">)))</span>
+<span class="n">ax5</span><span class="o">.</span><span class="n">set_yticklabels</span><span class="p">(</span><span class="n">class_counts</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">9</span><span class="p">)</span>
+<span class="n">ax5</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;Number of Flows&#39;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">fontweight</span><span class="o">=</span><span class="s1">&#39;bold&#39;</span><span class="p">)</span>
+<span class="n">ax5</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Top 8 Application Classes</span><span class="se">\n</span><span class="s1">(Test Set)&#39;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">11</span><span class="p">,</span> <span class="n">fontweight</span><span class="o">=</span><span class="s1">&#39;bold&#39;</span><span class="p">,</span> <span class="n">pad</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+<span class="n">ax5</span><span class="o">.</span><span class="n">invert_yaxis</span><span class="p">()</span>
+<span class="n">ax5</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">linestyle</span><span class="o">=</span><span class="s1">&#39;--&#39;</span><span class="p">)</span>
+
+<span class="c1"># 6. Packet Size Distribution by Flow</span>
+<span class="n">ax6</span> <span class="o">=</span> <span class="n">fig</span><span class="o">.</span><span class="n">add_subplot</span><span class="p">(</span><span class="n">gs</span><span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>
+<span class="n">ax6</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">flow_df</span><span class="p">[</span><span class="s1">&#39;pkt_len_mean&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">upper</span><span class="o">=</span><span class="mi">1500</span><span class="p">),</span> <span class="n">bins</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;#e67e22&#39;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.7</span><span class="p">,</span> <span class="n">edgecolor</span><span class="o">=</span><span class="s1">&#39;black&#39;</span><span class="p">)</span>
+<span class="n">ax6</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;Mean Packet Size (bytes)&#39;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">fontweight</span><span class="o">=</span><span class="s1">&#39;bold&#39;</span><span class="p">)</span>
+<span class="n">ax6</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;Number of Flows&#39;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">fontweight</span><span class="o">=</span><span class="s1">&#39;bold&#39;</span><span class="p">)</span>
+<span class="n">ax6</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Flow Mean Packet Size</span><span class="se">\n</span><span class="s1">Distribution&#39;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">11</span><span class="p">,</span> <span class="n">fontweight</span><span class="o">=</span><span class="s1">&#39;bold&#39;</span><span class="p">,</span> <span class="n">pad</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+<span class="n">ax6</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s1">&#39;y&#39;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">linestyle</span><span class="o">=</span><span class="s1">&#39;--&#39;</span><span class="p">)</span>
+
+<span class="c1"># 7. Summary Statistics</span>
+<span class="n">ax7</span> <span class="o">=</span> <span class="n">fig</span><span class="o">.</span><span class="n">add_subplot</span><span class="p">(</span><span class="n">gs</span><span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">])</span>
+<span class="n">ax7</span><span class="o">.</span><span class="n">axis</span><span class="p">(</span><span class="s1">&#39;tight&#39;</span><span class="p">)</span>
+<span class="n">ax7</span><span class="o">.</span><span class="n">axis</span><span class="p">(</span><span class="s1">&#39;off&#39;</span><span class="p">)</span>
+<span class="n">ax7</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Flow-Based Analysis Summary&#39;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">11</span><span class="p">,</span> <span class="n">fontweight</span><span class="o">=</span><span class="s1">&#39;bold&#39;</span><span class="p">,</span> <span class="n">pad</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="mf">1.05</span><span class="p">)</span>
+
+<span class="n">summary_data</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">[</span><span class="s1">&#39;Metric&#39;</span><span class="p">,</span> <span class="s1">&#39;Value&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">],</span>
+    <span class="p">[</span><span class="s1">&#39;Total Packets&#39;</span><span class="p">,</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">pdf</span><span class="p">)</span><span class="si">:</span><span class="s1">,</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">],</span>
+    <span class="p">[</span><span class="s1">&#39;Total Flows&#39;</span><span class="p">,</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">flow_df</span><span class="p">)</span><span class="si">:</span><span class="s1">,</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">],</span>
+    <span class="p">[</span><span class="s1">&#39;Train Flows&#39;</span><span class="p">,</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">X_train</span><span class="p">)</span><span class="si">:</span><span class="s1">,</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">],</span>
+    <span class="p">[</span><span class="s1">&#39;Test Flows&#39;</span><span class="p">,</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">X_test</span><span class="p">)</span><span class="si">:</span><span class="s1">,</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">],</span>
+    <span class="p">[</span><span class="s1">&#39;Flow Features&#39;</span><span class="p">,</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">X_train_processed</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">],</span>
+    <span class="p">[</span><span class="s1">&#39;Classes&#39;</span><span class="p">,</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">y</span><span class="o">.</span><span class="n">nunique</span><span class="p">()</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">],</span>
+    <span class="p">[</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">],</span>
+    <span class="p">[</span><span class="s1">&#39;Model&#39;</span><span class="p">,</span> <span class="s1">&#39;Accuracy&#39;</span><span class="p">,</span> <span class="s1">&#39;Rank&#39;</span><span class="p">],</span>
+    <span class="p">[</span><span class="s1">&#39;Random Forest&#39;</span><span class="p">,</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">accuracy</span><span class="o">*</span><span class="mi">100</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1">%&#39;</span><span class="p">,</span> <span class="s1">&#39;1st&#39;</span> <span class="k">if</span> <span class="n">accuracy</span> <span class="o">==</span> <span class="n">best_accuracy</span> <span class="k">else</span> <span class="s1">&#39;&#39;</span><span class="p">],</span>
+    <span class="p">[</span><span class="s1">&#39;Neural Network&#39;</span><span class="p">,</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">accuracy_nn</span><span class="o">*</span><span class="mi">100</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1">%&#39;</span><span class="p">,</span> <span class="s1">&#39;1st&#39;</span> <span class="k">if</span> <span class="n">accuracy_nn</span> <span class="o">==</span> <span class="n">best_accuracy</span> <span class="k">else</span> <span class="s1">&#39;&#39;</span><span class="p">],</span>
+    <span class="p">[</span><span class="s1">&#39;SVM&#39;</span><span class="p">,</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">accuracy_svm</span><span class="o">*</span><span class="mi">100</span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1">%&#39;</span><span class="p">,</span> <span class="s1">&#39;1st&#39;</span> <span class="k">if</span> <span class="n">accuracy_svm</span> <span class="o">==</span> <span class="n">best_accuracy</span> <span class="k">else</span> <span class="s1">&#39;&#39;</span><span class="p">],</span>
+<span class="p">]</span>
+
+<span class="n">table</span> <span class="o">=</span> <span class="n">ax7</span><span class="o">.</span><span class="n">table</span><span class="p">(</span><span class="n">cellText</span><span class="o">=</span><span class="n">summary_data</span><span class="p">,</span> <span class="n">cellLoc</span><span class="o">=</span><span class="s1">&#39;left&#39;</span><span class="p">,</span> <span class="n">loc</span><span class="o">=</span><span class="s1">&#39;upper center&#39;</span><span class="p">,</span>
+                 <span class="n">colWidths</span><span class="o">=</span><span class="p">[</span><span class="mf">0.4</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">],</span> <span class="n">bbox</span><span class="o">=</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mf">0.85</span><span class="p">])</span>
+<span class="n">table</span><span class="o">.</span><span class="n">auto_set_font_size</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
+<span class="n">table</span><span class="o">.</span><span class="n">set_fontsize</span><span class="p">(</span><span class="mi">8</span><span class="p">)</span>
+<span class="n">table</span><span class="o">.</span><span class="n">scale</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mf">1.8</span><span class="p">)</span>
+
+<span class="c1"># Style header rows</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">8</span><span class="p">]:</span>
+    <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+        <span class="n">table</span><span class="p">[(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">)]</span><span class="o">.</span><span class="n">set_facecolor</span><span class="p">(</span><span class="s1">&#39;#34495e&#39;</span><span class="p">)</span>
+        <span class="n">table</span><span class="p">[(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">)]</span><span class="o">.</span><span class="n">set_text_props</span><span class="p">(</span><span class="n">weight</span><span class="o">=</span><span class="s1">&#39;bold&#39;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;white&#39;</span><span class="p">)</span>
+
+<span class="n">fig</span><span class="o">.</span><span class="n">suptitle</span><span class="p">(</span><span class="s1">&#39;Application Identification in Network Traffic - Flow-Based Analysis Results&#39;</span><span class="p">,</span>
+             <span class="n">fontsize</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="n">fontweight</span><span class="o">=</span><span class="s1">&#39;bold&#39;</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="mf">0.98</span><span class="p">)</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">(</span><span class="n">rect</span><span class="o">=</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mf">0.97</span><span class="p">])</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s1">&#39;flow_based_results_visualization.png&#39;</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s1">&#39;tight&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;✓ Visualization saved as &#39;flow_based_results_visualization.png&#39;&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="_images/final_project_27_0.png" src="_images/final_project_27_0.png" />
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+✓ Visualization saved as &#39;flow_based_results_visualization.png&#39;
+</pre></div></div>
+</div>
+</section>
+<section id="Summary-of-Findings">
+<h3>Summary of Findings<a class="headerlink" href="#Summary-of-Findings" title="Link to this heading">¶</a></h3>
+<p>This project explored three machine learning approaches for identifying applications in encrypted network traffic using <strong>flow-level features</strong>. Unlike packet-level analysis, flow-based classification aggregates related packets (using the 5-tuple: src_ip, dst_ip, src_port, dst_port, protocol) and extracts statistical features that capture traffic behavior patterns.</p>
+<section id="Dataset-Statistics">
+<h4>Dataset Statistics<a class="headerlink" href="#Dataset-Statistics" title="Link to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><strong>Total packets</strong>: 529,019</p></li>
+<li><p><strong>Total flows extracted</strong>: 111,284</p></li>
+<li><p><strong>Average packets per flow</strong>: 4.75 (median: 2.0)</p></li>
+<li><p><strong>Flow size range</strong>: 1 to 875 packets</p></li>
+<li><p><strong>Features per flow</strong>: 20</p></li>
+<li><p><strong>Application classes</strong>: 30</p></li>
+</ul>
+<p>The dataset includes traffic from various applications including Hangouts audio (126K packets), Facebook audio (122K packets), Skype file transfers (85K packets), and others.</p>
+</section>
+<section id="Flow-Definition-and-Extraction">
+<h4>Flow Definition and Extraction<a class="headerlink" href="#Flow-Definition-and-Extraction" title="Link to this heading">¶</a></h4>
+<p>A <strong>network flow</strong> was defined as a bidirectional sequence of packets sharing the same 5-tuple. For each flow, we computed 20 statistical features:</p>
+<ul class="simple">
+<li><p><strong>Packet statistics</strong>: total packets, total bytes, packets per second</p></li>
+<li><p><strong>Size statistics</strong>: mean, std, min, max, median packet lengths</p></li>
+<li><p><strong>Timing statistics</strong>: flow duration, inter-arrival time (IAT) mean/std/min/max</p></li>
+<li><p><strong>Packet size distribution</strong>: counts of small (&lt;100B), medium (100-500B), and large (&gt;500B) packets</p></li>
+<li><p><strong>Protocol features</strong>: protocol type, port numbers</p></li>
+</ul>
+</section>
+<section id="Model-Performance">
+<h4>Model Performance<a class="headerlink" href="#Model-Performance" title="Link to this heading">¶</a></h4>
+<p>The three models achieved the following results on flow-level classification (89,026 training flows, 22,257 test flows):</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Model</p></th>
+<th class="head"><p>Accuracy</p></th>
+<th class="head"><p>Training Time</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>Random Forest</strong></p></td>
+<td><p><strong>50.39%</strong></p></td>
+<td><p>1.41s</p></td>
+</tr>
+<tr class="row-odd"><td><p>Neural Network (MLP)</p></td>
+<td><p>46.46%</p></td>
+<td><p>5.70s</p></td>
+</tr>
+<tr class="row-even"><td><p>Support Vector Machine</p></td>
+<td><p>41.98%</p></td>
+<td><p>314.05s</p></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Best Model</strong>: Random Forest with 50.39% accuracy across 30 application classes.</p>
+</section>
+<section id="Top-10-Most-Important-Flow-Features-(Random-Forest)">
+<h4>Top 10 Most Important Flow Features (Random Forest)<a class="headerlink" href="#Top-10-Most-Important-Flow-Features-(Random-Forest)" title="Link to this heading">¶</a></h4>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Rank</p></th>
+<th class="head"><p>Feature</p></th>
+<th class="head"><p>Importance</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>max_port</p></td>
+<td><p>0.1753</p></td>
+</tr>
+<tr class="row-odd"><td><p>2</p></td>
+<td><p>bytes_per_sec</p></td>
+<td><p>0.1036</p></td>
+</tr>
+<tr class="row-even"><td><p>3</p></td>
+<td><p>iat_max</p></td>
+<td><p>0.0925</p></td>
+</tr>
+<tr class="row-odd"><td><p>4</p></td>
+<td><p>flow_duration</p></td>
+<td><p>0.0702</p></td>
+</tr>
+<tr class="row-even"><td><p>5</p></td>
+<td><p>packets_per_sec</p></td>
+<td><p>0.0623</p></td>
+</tr>
+<tr class="row-odd"><td><p>6</p></td>
+<td><p>iat_std</p></td>
+<td><p>0.0573</p></td>
+</tr>
+<tr class="row-even"><td><p>7</p></td>
+<td><p>pkt_len_std</p></td>
+<td><p>0.0547</p></td>
+</tr>
+<tr class="row-odd"><td><p>8</p></td>
+<td><p>pkt_len_median</p></td>
+<td><p>0.0523</p></td>
+</tr>
+<tr class="row-even"><td><p>9</p></td>
+<td><p>iat_mean</p></td>
+<td><p>0.0522</p></td>
+</tr>
+<tr class="row-odd"><td><p>10</p></td>
+<td><p>total_bytes</p></td>
+<td><p>0.0490</p></td>
+</tr>
+</tbody>
+</table>
+<p>The most discriminative features are port numbers (likely indicating server-side services), flow rate metrics, and inter-arrival time patterns.</p>
+</section>
+<section id="Key-Observations">
+<h4>Key Observations<a class="headerlink" href="#Key-Observations" title="Link to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><strong>Flow-level vs Packet-level</strong>: Flow-based analysis provides a more natural unit for application classification. Aggregating 529K packets into 111K flows reduces complexity while capturing meaningful patterns.</p></li>
+<li><p><strong>Feature Importance</strong>: Port numbers and timing features (IAT, flow duration) are the most discriminative, followed by packet size statistics. This suggests applications have distinctive temporal behavior patterns.</p></li>
+<li><p><strong>Class Imbalance</strong>: The 30-class classification is challenging, with some applications having significantly more samples than others, contributing to the ~50% accuracy ceiling.</p></li>
+<li><p><strong>Model Trade-offs</strong>: Random Forest provides the best accuracy with minimal training time. SVM required 314 seconds but achieved lower accuracy, suggesting linear boundaries are insufficient for this problem.</p></li>
+</ul>
+</section>
+<section id="Practical-Implications">
+<h4>Practical Implications<a class="headerlink" href="#Practical-Implications" title="Link to this heading">¶</a></h4>
+<p>Flow-based application identification at ~50% accuracy across 30 classes demonstrates:</p>
+<ul class="simple">
+<li><p><strong>Feasibility</strong>: Machine learning can distinguish applications from encrypted traffic metadata alone</p></li>
+<li><p><strong>Network Management</strong>: Even partial accuracy enables traffic prioritization and QoS policies</p></li>
+<li><p><strong>Security Monitoring</strong>: Unusual flow patterns can flag potential threats</p></li>
+<li><p><strong>Privacy Preservation</strong>: No payload inspection required</p></li>
+</ul>
+</section>
+</section>
+<section id="Conclusion">
+<h3>Conclusion<a class="headerlink" href="#Conclusion" title="Link to this heading">¶</a></h3>
+<p>This project successfully demonstrated flow-level machine learning for application identification in encrypted network traffic. By defining flows using the 5-tuple and extracting 20 statistical features, we achieved <strong>50.39% accuracy</strong> with Random Forest across <strong>30 application classes</strong> on <strong>111,284 flows</strong>.</p>
+<p>The flow-based approach directly addresses the feedback about defining and extracting flows from PCAPNG data, providing a rigorous and industry-standard methodology for traffic analysis.</p>
+<p><strong>Future work</strong> could improve accuracy through:</p>
+<ul class="simple">
+<li><p>Deep learning on raw packet sequences within flows (RNN/LSTM)</p></li>
+<li><p>Addressing class imbalance with oversampling/undersampling</p></li>
+<li><p>Adding more sophisticated features (e.g., packet direction, burst patterns)</p></li>
+<li><p>Ensemble methods combining multiple classifiers</p></li>
+<li><p>Transfer learning across different network environments</p></li>
+</ul>
+</section>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">ml-research</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Detecting Applications in Traffic Flows Using Machine Learning</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#Project-Overview">Project Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#Data">Data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#Results">Results</a></li>
+</ul>
+</li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="index.html" title="previous chapter">ml-research documentation</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2025, Sam and Jillian.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.2.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/final_project.ipynb.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

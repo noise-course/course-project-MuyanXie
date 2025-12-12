@@ -1,0 +1,217 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "id": "310f8b70",
+   "metadata": {},
+   "source": [
+    "# Test Research Proposal Documentation"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "73c2f101",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Packet comments\n",
+      "    9868669216672554899,p2p_torrent_torrent\n",
+      "Frame 1: 145 bytes on wire (1160 bits), 145 bytes captured (1160 bits) on interface unknown, id 0\n",
+      "    Section number: 1\n",
+      "    Interface id: 0 (unknown)\n",
+      "        Interface name: unknown\n",
+      "    Encapsulation type: Ethernet (1)\n",
+      "    Arrival Time: Dec 27, 196309 00:32:01.109125000 CST\n",
+      "    UTC Arrival Time: Dec 27, 196309 06:32:01.109125000 UTC\n",
+      "    Epoch Arrival Time: 6132777604321.109125000\n",
+      "    [Time shift for this packet: 0.000000000 seconds]\n",
+      "    [Time delta from previous captured frame: 0.000000000 seconds]\n",
+      "    [Time delta from previous displayed frame: 0.000000000 seconds]\n",
+      "    [Time since reference or first frame: 0.000000000 seconds]\n",
+      "    Frame Number: 1\n",
+      "    Frame Length: 145 bytes (1160 bits)\n",
+      "    Capture Length: 145 bytes (1160 bits)\n",
+      "    [Frame is marked: False]\n",
+      "    [Frame is ignored: False]\n",
+      "    [Protocols in frame: eth:ethertype:ip:udp:bt-dht]\n",
+      "Ethernet II, Src: Dell_36:1c:a2 (b8:ac:6f:36:1c:a2), Dst: AlcatelLucen_3c:65:50 (e8:e7:32:3c:65:50)\n",
+      "    Destination: AlcatelLucen_3c:65:50 (e8:e7:32:3c:65:50)\n",
+      "        .... ..0. .... .... .... .... = LG bit: Globally unique address (factory default)\n",
+      "        .... ...0 .... .... .... .... = IG bit: Individual address (unicast)\n",
+      "    Source: Dell_36:1c:a2 (b8:ac:6f:36:1c:a2)\n",
+      "        .... ..0. .... .... .... .... = LG bit: Globally unique address (factory default)\n",
+      "        .... ...0 .... .... .... .... = IG bit: Individual address (unicast)\n",
+      "    Type: IPv4 (0x0800)\n",
+      "    [Stream index: 0]\n",
+      "Internet Protocol Version 4, Src: 131.202.240.87, Dst: 81.38.109.9\n",
+      "    0100 .... = Version: 4\n",
+      "    .... 0101 = Header Length: 20 bytes (5)\n",
+      "    Differentiated Services Field: 0x00 (DSCP: CS0, ECN: Not-ECT)\n",
+      "        0000 00.. = Differentiated Services Codepoint: Default (0)\n",
+      "        .... ..00 = Explicit Congestion Notification: Not ECN-Capable Transport (0)\n",
+      "    Total Length: 131\n",
+      "    Identification: 0x0dc5 (3525)\n",
+      "    000. .... = Flags: 0x0\n",
+      "        0... .... = Reserved bit: Not set\n",
+      "        .0.. .... = Don't fragment: Not set\n",
+      "        ..0. .... = More fragments: Not set\n",
+      "    ...0 0000 0000 0000 = Fragment Offset: 0\n",
+      "    Time to Live: 128\n",
+      "    Protocol: UDP (17)\n",
+      "    Header Checksum: 0xfa53 [validation disabled]\n",
+      "    [Header checksum status: Unverified]\n",
+      "    Source Address: 131.202.240.87\n",
+      "    Destination Address: 81.38.109.9\n",
+      "    [Stream index: 0]\n",
+      "User Datagram Protocol, Src Port: 61009, Dst Port: 6881\n",
+      "    Source Port: 61009\n",
+      "    Destination Port: 6881\n",
+      "    Length: 111\n",
+      "    Checksum: 0x50f6 [unverified]\n",
+      "    [Checksum Status: Unverified]\n",
+      "    [Stream index: 0]\n",
+      "    [Stream Packet Number: 1]\n",
+      "    [Timestamps]\n",
+      "        [Time since first frame: 0.000000000 seconds]\n",
+      "        [Time since previous frame: 0.000000000 seconds]\n",
+      "    UDP payload (103 bytes)\n",
+      "BitTorrent DHT Protocol\n",
+      "    Request arguments: Dictionary...\n",
+      "        Key: a\n",
+      "        Value: Dictionary...\n",
+      "            id: e4594b994c8e240182e57d20e4c11edb1259348b\n",
+      "                Key: id\n",
+      "                Value: e4594b994c8e240182e57d20e4c11edb1259348b\n",
+      "            target: e800635d00000f4400005049000078f500005c8b\n",
+      "                Key: target\n",
+      "                Value: e800635d00000f4400005049000078f500005c8b\n",
+      "            Terminator: e\n",
+      "    Request type: find_node\n",
+      "        Key: q\n",
+      "        Value: find_node\n",
+      "    Transaction ID: 24540000\n",
+      "        Key: t\n",
+      "        Value: 24540000\n",
+      "    Version: 55549b40\n",
+      "        Key: v\n",
+      "        Value: 55549b40\n",
+      "    Message type: Request\n",
+      "        Key: y\n",
+      "        Value: q\n",
+      "    Terminator: e\n",
+      "\n",
+      "\n",
+      "\n",
+      "==================================================\n",
+      "FOUND 'p2p' in packet data!\n",
+      "==================================================\n",
+      "Packet comments\n",
+      "    9868669216672554899,p2p_torrent_torrent\n"
+     ]
+    }
+   ],
+   "source": [
+    "import subprocess\n",
+    "import json\n",
+    "\n",
+    "def get_all_packet_data(pcapng_file, packet_num=1):\n",
+    "    \"\"\"Get complete packet data including comments using tshark\"\"\"\n",
+    "    \n",
+    "    # Use tshark verbose mode to see EVERYTHING\n",
+    "    cmd = ['tshark', '-r', pcapng_file, '-c', str(packet_num), '-V']\n",
+    "    \n",
+    "    result = subprocess.run(cmd, capture_output=True, text=True)\n",
+    "    return result.stdout\n",
+    "\n",
+    "# Get first packet with ALL details\n",
+    "output = get_all_packet_data('traffic.pcapng', 1)\n",
+    " \n",
+    "print(output)\n",
+    "\n",
+    "# Search for \"p2p\" in the output\n",
+    "if 'p2p' in output.lower():\n",
+    "    print(\"\\n\" + \"=\"*50)\n",
+    "    print(\"FOUND 'p2p' in packet data!\")\n",
+    "    print(\"=\"*50)\n",
+    "    \n",
+    "    # Extract the lines containing p2p\n",
+    "    for line in output.split('\\n'):\n",
+    "        if 'p2p' in line.lower() or 'comment' in line.lower():\n",
+    "            print(line)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "id": "0f763f30",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "WARNING: PcapNg: invalid comment option\n"
+     ]
+    },
+    {
+     "ename": "ValueError",
+     "evalue": "year 196309 is out of range",
+     "output_type": "error",
+     "traceback": [
+      "\u001b[31m---------------------------------------------------------------------------\u001b[39m",
+      "\u001b[31mValueError\u001b[39m                                Traceback (most recent call last)",
+      "\u001b[36mCell\u001b[39m\u001b[36m \u001b[39m\u001b[32mIn[17]\u001b[39m\u001b[32m, line 5\u001b[39m\n\u001b[32m      1\u001b[39m \u001b[38;5;28;01mfrom\u001b[39;00m\u001b[38;5;250m \u001b[39m\u001b[34;01mnetml\u001b[39;00m\u001b[34;01m.\u001b[39;00m\u001b[34;01mpparser\u001b[39;00m\u001b[34;01m.\u001b[39;00m\u001b[34;01mparser\u001b[39;00m\u001b[38;5;250m \u001b[39m\u001b[38;5;28;01mimport\u001b[39;00m PCAP\n\u001b[32m      3\u001b[39m pcap = PCAP(\u001b[33m'\u001b[39m\u001b[33mtraffic.pcapng\u001b[39m\u001b[33m'\u001b[39m)\n\u001b[32m----> \u001b[39m\u001b[32m5\u001b[39m \u001b[43mpcap\u001b[49m\u001b[43m.\u001b[49m\u001b[43mpcap2pandas\u001b[49m\u001b[43m(\u001b[49m\u001b[43m)\u001b[49m\n\u001b[32m      7\u001b[39m pdf = pcap.df\n",
+      "\u001b[36mFile \u001b[39m\u001b[32m~/Documents/school_work/CMSC 25422/research proposal/venv/lib/python3.12/site-packages/netml/pparser/parser.py:1088\u001b[39m, in \u001b[36mPCAP.pcap2pandas\u001b[39m\u001b[34m(self)\u001b[39m\n\u001b[32m   1078\u001b[39m \u001b[38;5;28;01mdef\u001b[39;00m\u001b[38;5;250m \u001b[39m\u001b[34mpcap2pandas\u001b[39m(\u001b[38;5;28mself\u001b[39m):\n\u001b[32m   1079\u001b[39m \u001b[38;5;250m    \u001b[39m\u001b[33;03m\"\"\"Parse PCAP file into pandas DataFrame.\u001b[39;00m\n\u001b[32m   1080\u001b[39m \n\u001b[32m   1081\u001b[39m \u001b[33;03m    Requires:\u001b[39;00m\n\u001b[32m   (...)\u001b[39m\u001b[32m   1086\u001b[39m \n\u001b[32m   1087\u001b[39m \u001b[33;03m    \"\"\"\u001b[39;00m\n\u001b[32m-> \u001b[39m\u001b[32m1088\u001b[39m     (_, \u001b[38;5;28mself\u001b[39m.pcap2pandas.\u001b[34m__dict__\u001b[39m[\u001b[33m'\u001b[39m\u001b[33mtot_time\u001b[39m\u001b[33m'\u001b[39m]) = \u001b[38;5;28;43mself\u001b[39;49m\u001b[43m.\u001b[49m\u001b[43m_pcap2pandas\u001b[49m\u001b[43m(\u001b[49m\u001b[43m)\u001b[49m\n",
+      "\u001b[36mFile \u001b[39m\u001b[32m~/Documents/school_work/CMSC 25422/research proposal/venv/lib/python3.12/site-packages/netml/utils/tool.py:149\u001b[39m, in \u001b[36mtiming.<locals>.wrapper\u001b[39m\u001b[34m(*args, **kwargs)\u001b[39m\n\u001b[32m    147\u001b[39m \u001b[38;5;28;01mif\u001b[39;00m verbose:\n\u001b[32m    148\u001b[39m     \u001b[38;5;28mprint\u001b[39m(\u001b[33mf\u001b[39m\u001b[33m'\u001b[39m\u001b[38;5;130;01m\\'\u001b[39;00m\u001b[38;5;132;01m{\u001b[39;00mfunc.\u001b[34m__name__\u001b[39m\u001b[38;5;132;01m}\u001b[39;00m\u001b[33m()\u001b[39m\u001b[38;5;130;01m\\'\u001b[39;00m\u001b[33m starts at \u001b[39m\u001b[38;5;132;01m{\u001b[39;00mst\u001b[38;5;132;01m}\u001b[39;00m\u001b[33m'\u001b[39m)\n\u001b[32m--> \u001b[39m\u001b[32m149\u001b[39m result = \u001b[43mfunc\u001b[49m\u001b[43m(\u001b[49m\u001b[43m*\u001b[49m\u001b[43margs\u001b[49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[43m*\u001b[49m\u001b[43m*\u001b[49m\u001b[43mkwargs\u001b[49m\u001b[43m)\u001b[49m\n\u001b[32m    150\u001b[39m end = time.time()\n\u001b[32m    151\u001b[39m ed = datetime.fromtimestamp(end).strftime(\u001b[33m'\u001b[39m\u001b[33m%\u001b[39m\u001b[33mY-\u001b[39m\u001b[33m%\u001b[39m\u001b[33mm-\u001b[39m\u001b[38;5;132;01m%d\u001b[39;00m\u001b[33m \u001b[39m\u001b[33m%\u001b[39m\u001b[33mH:\u001b[39m\u001b[33m%\u001b[39m\u001b[33mM:\u001b[39m\u001b[33m%\u001b[39m\u001b[33mS\u001b[39m\u001b[33m'\u001b[39m)\n",
+      "\u001b[36mFile \u001b[39m\u001b[32m~/Documents/school_work/CMSC 25422/research proposal/venv/lib/python3.12/site-packages/netml/pparser/parser.py:1058\u001b[39m, in \u001b[36mPCAP._pcap2pandas\u001b[39m\u001b[34m(self)\u001b[39m\n\u001b[32m   1045\u001b[39m \u001b[38;5;129m@timing\u001b[39m\n\u001b[32m   1046\u001b[39m \u001b[38;5;28;01mdef\u001b[39;00m\u001b[38;5;250m \u001b[39m\u001b[34m_pcap2pandas\u001b[39m(\u001b[38;5;28mself\u001b[39m):\n\u001b[32m   1047\u001b[39m \u001b[38;5;250m    \u001b[39m\u001b[33;03m\"\"\"Parse PCAP file into pandas DataFrame.\u001b[39;00m\n\u001b[32m   1048\u001b[39m \n\u001b[32m   1049\u001b[39m \u001b[33;03m    Requires:\u001b[39;00m\n\u001b[32m   (...)\u001b[39m\u001b[32m   1056\u001b[39m \n\u001b[32m   1057\u001b[39m \u001b[33;03m    \"\"\"\u001b[39;00m\n\u001b[32m-> \u001b[39m\u001b[32m1058\u001b[39m     \u001b[38;5;28mself\u001b[39m.df = \u001b[43mpd\u001b[49m\u001b[43m.\u001b[49m\u001b[43mDataFrame\u001b[49m\u001b[43m(\u001b[49m\u001b[38;5;28;43mself\u001b[39;49m\u001b[43m.\u001b[49m\u001b[43m_iter_pcap_dict\u001b[49m\u001b[43m(\u001b[49m\u001b[43m)\u001b[49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[43mcolumns\u001b[49m\u001b[43m=\u001b[49m\u001b[38;5;28;43mself\u001b[39;49m\u001b[43m.\u001b[49m\u001b[43m_pcap_columns\u001b[49m\u001b[43m)\u001b[49m\n\u001b[32m   1060\u001b[39m     \u001b[38;5;28mself\u001b[39m.df[\u001b[33m'\u001b[39m\u001b[33mdatetime\u001b[39m\u001b[33m'\u001b[39m] = pd.to_datetime(\u001b[38;5;28mself\u001b[39m.df[\u001b[33m'\u001b[39m\u001b[33mdatetime\u001b[39m\u001b[33m'\u001b[39m])\n\u001b[32m   1062\u001b[39m     \u001b[38;5;28mself\u001b[39m.df[\u001b[33m'\u001b[39m\u001b[33mip_dst_int\u001b[39m\u001b[33m'\u001b[39m] = \u001b[38;5;28mself\u001b[39m.df[\u001b[33m'\u001b[39m\u001b[33mip_dst\u001b[39m\u001b[33m'\u001b[39m].apply(\n\u001b[32m   1063\u001b[39m         \u001b[38;5;28;01mlambda\u001b[39;00m x: \u001b[38;5;28;01mNone\u001b[39;00m \u001b[38;5;28;01mif\u001b[39;00m x \u001b[38;5;129;01mis\u001b[39;00m \u001b[38;5;28;01mNone\u001b[39;00m \u001b[38;5;28;01melse\u001b[39;00m \u001b[38;5;28mint\u001b[39m(ipaddress.ip_address(x)))\n",
+      "\u001b[36mFile \u001b[39m\u001b[32m~/Documents/school_work/CMSC 25422/research proposal/venv/lib/python3.12/site-packages/pandas/core/frame.py:843\u001b[39m, in \u001b[36mDataFrame.__init__\u001b[39m\u001b[34m(self, data, index, columns, dtype, copy)\u001b[39m\n\u001b[32m    841\u001b[39m         data = np.asarray(data)\n\u001b[32m    842\u001b[39m     \u001b[38;5;28;01melse\u001b[39;00m:\n\u001b[32m--> \u001b[39m\u001b[32m843\u001b[39m         data = \u001b[38;5;28;43mlist\u001b[39;49m\u001b[43m(\u001b[49m\u001b[43mdata\u001b[49m\u001b[43m)\u001b[49m\n\u001b[32m    844\u001b[39m \u001b[38;5;28;01mif\u001b[39;00m \u001b[38;5;28mlen\u001b[39m(data) > \u001b[32m0\u001b[39m:\n\u001b[32m    845\u001b[39m     \u001b[38;5;28;01mif\u001b[39;00m is_dataclass(data[\u001b[32m0\u001b[39m]):\n",
+      "\u001b[36mFile \u001b[39m\u001b[32m~/Documents/school_work/CMSC 25422/research proposal/venv/lib/python3.12/site-packages/netml/pparser/parser.py:994\u001b[39m, in \u001b[36mPCAP._iter_pcap_dict\u001b[39m\u001b[34m(self)\u001b[39m\n\u001b[32m    989\u001b[39m \u001b[38;5;28;01mfor\u001b[39;00m pkt \u001b[38;5;129;01min\u001b[39;00m pcap_reader:\n\u001b[32m    990\u001b[39m     pkt_dict = \u001b[38;5;28mdict\u001b[39m.fromkeys(\u001b[38;5;28mself\u001b[39m._pcap_columns)\n\u001b[32m    992\u001b[39m     pkt_dict.update(\n\u001b[32m    993\u001b[39m         time=pkt.time,\n\u001b[32m--> \u001b[39m\u001b[32m994\u001b[39m         datetime=\u001b[43mdatetime\u001b[49m\u001b[43m.\u001b[49m\u001b[43mfromtimestamp\u001b[49m\u001b[43m(\u001b[49m\u001b[38;5;28;43mint\u001b[39;49m\u001b[43m(\u001b[49m\u001b[43mpkt\u001b[49m\u001b[43m.\u001b[49m\u001b[43mtime\u001b[49m\u001b[43m)\u001b[49m\u001b[43m)\u001b[49m,\n\u001b[32m    995\u001b[39m         length=\u001b[38;5;28mlen\u001b[39m(pkt),\n\u001b[32m    996\u001b[39m         is_dns=\u001b[38;5;28;01mFalse\u001b[39;00m,\n\u001b[32m    997\u001b[39m     )\n\u001b[32m    999\u001b[39m     \u001b[38;5;28;01mif\u001b[39;00m Ether \u001b[38;5;129;01min\u001b[39;00m pkt:\n\u001b[32m   1000\u001b[39m         pkt_dict[\u001b[33m'\u001b[39m\u001b[33mmac_dst\u001b[39m\u001b[33m'\u001b[39m] = pkt[Ether].dst\n",
+      "\u001b[31mValueError\u001b[39m: year 196309 is out of range"
+     ]
+    }
+   ],
+   "source": [
+    "from netml.pparser.parser import PCAP\n",
+    "\n",
+    "pcap = PCAP('traffic.pcapng')\n",
+    "\n",
+    "pcap.pcap2pandas()\n",
+    "\n",
+    "pdf = pcap.df"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "677c0799",
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "venv (3.12.8)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.12.8"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
